@@ -1,10 +1,10 @@
 #![allow(non_snake_case)]
 
-use std::{fs, collections::HashMap, cell::Cell, rc::Rc};
-
 use dioxus::{prelude::*, html::input_data::keyboard_types::{Code, Modifiers}};
 use dioxus_desktop::{Config, WindowBuilder, PhysicalSize};
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
+
+mod search;
 
 fn set_window_properties(cx: Scope) {
     let window = dioxus_desktop::use_window(cx);
@@ -17,60 +17,25 @@ fn set_window_properties(cx: Scope) {
 
 #[inline_props]
 fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Option<KeyboardData>) -> Element {
-    let matcher = use_ref(cx, SkimMatcherV2::default);
-    let values = use_ref(cx, || {
-        let Ok(path) = std::env::var("PATH") else { return vec![] };
-
-        let mut values = vec![];
-        for path in path.split(':') {
-            let entries = fs::read_dir(path)
-                .map(|entries| entries
-                    .flatten()
-                    .filter(|entry| !entry.metadata().map(|x| x.is_dir()).unwrap_or(false))
-                    .flat_map(|entry| Some(entry.file_name().to_str()?.to_owned()))
-                );
-
-            if let Ok(entries) = entries {
-                values.extend(entries);
-            }
-        }
-
-        values
-    });
-
+    let matcher = use_ref(cx, fuzzy_matcher::skim::SkimMatcherV2::default);
     let selected = use_state(cx, || 0_usize);
 
-    let filtered = use_memo(cx, (matcher, values, filter), |(matcher, values, filter)| {
-        let mut scored = values.read().iter()
-            .enumerate()
-            .flat_map(|(i, filename)| Some((i, matcher.read().fuzzy_match(filename, &filter)?)))
-            .collect::<Vec<_>>();
-
-        scored.sort_unstable_by_key(|(_, score)| std::cmp::Reverse(*score));
-        scored.truncate(50);
-
+    let entries = use_ref(cx, search::desktop_entries);
+    let filtered = use_memo(cx, (entries, filter), |(entries, filter)| {
+        let filtered = search::filter_entries(&*matcher.read(), &entries.read(), &filter, 50);
         // limit selected to the number of available choices when refiltering
-        selected.set((*selected.get()).min(scored.len().saturating_sub(1)));
+        selected.set((*selected.get()).min(filtered.len().saturating_sub(1)));
 
-        scored
+        filtered
     });
 
-    let highlighted_text = |i: usize| {
-        let filename = &values.read()[i];
-        let Some((_, indices)) = matcher.read().fuzzy_indices(filename, filter) else { return None };
-
-        let mut idx = 0;
-
+    let highlighted_text = |entry: usize| {
+        let entry = &entries.read()[entry];
         cx.render( rsx! {
-            for (i, c) in filename.chars().enumerate() {
+            for (span, highlighted) in entry.fuzzy_name_span(&*matcher.read(), filter) {
                 span {
-                    class: if Some(i) == indices.get(idx).copied() {
-                        idx += 1;
-                        "text-matched"
-                    } else {
-                        "text-normal"
-                    },
-                    "{c}"
+                    class: if highlighted { "text-matched" } else { "text-normal" },
+                    "{span}"
                 }
             }
         })
@@ -84,6 +49,8 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
             (Code::KeyK, Modifiers::CONTROL) => selected.set(selected.get().saturating_sub(1)),
             _ => unreachable!()
         }
+
+        println!("{:?}", matcher.read().fuzzy_indices(&entries.read()[filtered[*selected.current()].0].name, filter).map(|(_, v)| v).unwrap_or(vec![]));
     });
 
     cx.render(rsx! {
@@ -93,7 +60,7 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
                 class: if *selected.get() == i {
                     "no-select item selected"
                 } else { "no-select item" },
-                highlighted_text(element),
+                highlighted_text(element)
             }
         }
     })
@@ -104,11 +71,11 @@ fn App(cx: Scope) -> Element {
 
     let keyboard = use_state(cx, || None);
     let transmit_keyboard = move |event: Event<KeyboardData>| {
-        if matches!(
-            (event.code(), event.modifiers()),
-            (Code::KeyK | Code::KeyJ, Modifiers::CONTROL)
-        ) {
-            keyboard.set(Some((*event.data).clone()));
+        match (event.code(), event.modifiers()) {
+            (Code::KeyK | Code::KeyJ, Modifiers::CONTROL) => keyboard.set(Some((*event.data).clone())),
+            (Code::Escape, _) => dioxus_desktop::use_window(cx).close(),
+            (Code::Enter, _) => todo!("launch application"),
+            _ => ()
         }
     };
 
