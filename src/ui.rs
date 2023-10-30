@@ -55,7 +55,16 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
                 class: if *selected.get() == i {
                     "no-select item selected"
                 } else { "no-select item" },
-                highlighted_text(element)
+                div {
+                    class: "name",
+                    highlighted_text(element)
+                }
+                div {
+                    class: "comment",
+                    if let Some(comment) = entries.read()[element].comment() {
+                        comment
+                    } else { "" }
+                }
             }
         }
     })

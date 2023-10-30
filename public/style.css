@@ -47,17 +47,28 @@ input:focus {
 .item {
     background-color: #24273a;
     padding: 10px;
+
+	display: flex;
+	flex-flow: row nowrap;
+	justify-content: space-between;
+	align-items: flex-start;
+	row-gap: 10px;
+}
+
+.item .comment {
+	text-align: right;
+	color: #a5adcb
 }
 
 .item.selected {
 	background-color: #494d64;
 }
 
-.selected .text-matched {
+.selected .name .text-matched {
 	color: #eed49f
 }
 
-.text-matched {
+.name .text-matched {
 	color: #a6da95;
 }
 

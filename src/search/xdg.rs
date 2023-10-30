@@ -17,7 +17,7 @@ pub struct DesktopEntry {
 impl DesktopEntry {
     fn new(mut ini: HashMap<String, String>) -> Self {
         let name = ini.remove("Name").unwrap();
-        let comment = ini.remove("Description");
+        let comment = ini.remove("Comment");
         DesktopEntry {
             to_match: format!(
                 "{name}{}{}{}",
