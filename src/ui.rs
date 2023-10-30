@@ -1,4 +1,4 @@
-use dioxus::{prelude::*, html::input_data::keyboard_types::{Code, Modifiers}};
+use dioxus::{prelude::*, html::input_data::keyboard_types::{Code, Modifiers, Key}};
 use dioxus_desktop::PhysicalSize;
 
 use crate::search::{self, EntryTrait};
@@ -75,10 +75,10 @@ pub fn App(cx: Scope) -> Element {
 
     let keyboard = use_state(cx, || None);
     let transmit_keyboard = move |event: Event<KeyboardData>| {
-        match (event.code(), event.modifiers()) {
-            (Code::KeyK | Code::KeyJ, Modifiers::CONTROL) => keyboard.set(Some((*event.data).clone())),
-            (Code::Escape, _) => dioxus_desktop::use_window(cx).close(),
-            (Code::Enter, _) => todo!("launch application"),
+        match (event.key(), event.code(), event.modifiers()) {
+            (_, Code::KeyK | Code::KeyJ, Modifiers::CONTROL) => keyboard.set(Some((*event.data).clone())),
+            (Key::Escape, ..) => dioxus_desktop::use_window(cx).close(),
+            (Key::Enter, ..) => todo!("launch application"),
             _ => ()
         }
     };
