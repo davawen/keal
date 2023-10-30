@@ -4,6 +4,7 @@ use tini::Ini;
 
 use super::EntryTrait;
 
+#[derive(Debug)]
 pub struct DesktopEntry {
     pub name: String,
     comment: Option<String>,

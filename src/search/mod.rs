@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use enum_dispatch::enum_dispatch;
 use fuzzy_matcher::FuzzyMatcher;
 
@@ -36,7 +34,9 @@ pub trait EntryTrait {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[enum_dispatch(EntryTrait)]
+#[derive(Debug)]
 pub enum Entry {
     DesktopEntry,
     PluginEntry,
@@ -63,13 +63,13 @@ pub fn filter_entries(matcher: &impl FuzzyMatcher, entries: &[Entry], filter: &s
     filtered
 }
 
-/// Links an icon name to its path
-#[derive(Debug)]
-pub struct IconCache(HashMap<String, String>);
-
-fn icon_cache(icon_theme: &str) -> IconCache {
-    // let mut icon_dirs = xdg_directories("icons");
-    // icon_dirs.push("/usr/share/pixmaps".to_owned());
-
-    todo!()
-}
+// /// Links an icon name to its path
+// #[derive(Debug)]
+// pub struct IconCache(HashMap<String, String>);
+//
+// fn icon_cache(icon_theme: &str) -> IconCache {
+//     // let mut icon_dirs = xdg_directories("icons");
+//     // icon_dirs.push("/usr/share/pixmaps".to_owned());
+//
+//     todo!()
+// }

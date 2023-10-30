@@ -21,12 +21,14 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
     let entries = use_ref(cx, || search::create_entries(&plugins.read()));
 
     let field_entries = use_ref(cx, || None);
+    let current_plugin = use_ref(cx, || None);
 
     let filtered = use_memo(cx, (filter,), |(filter,)| {
         let filtered = if let Some((plugin, filter)) = plugins.read().filter_starts_with_plugin(&filter) {
             let fields: Vec<_> = plugin.generate().map(Entry::from).collect();
             let filtered = search::filter_entries(&*matcher.read(), &fields, filter, 50);
 
+            current_plugin.set(Some((plugin.prefix.clone(), filter.to_owned())));
             field_entries.set(Some(fields));
             filtered
         } else {
@@ -43,7 +45,7 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
     let highlighted_text = |entries: &[Entry], entry: usize| {
         let entry = &entries[entry];
         cx.render( rsx! {
-            for (span, highlighted) in entry.fuzzy_match_span(&*matcher.read(), filter) {
+            for (span, highlighted) in entry.fuzzy_match_span(&*matcher.read(), current_plugin.read().as_ref().map(|x| &x.1).unwrap_or(filter)) {
                 span {
                     class: if highlighted { "text-matched" } else { "text-normal" },
                     "{span}"
@@ -62,26 +64,29 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
         }
     });
 
-    cx.render(rsx! {
-        for (i, &(element, _)) in filtered.iter().enumerate() {
-            div {
-                key: "{i}",
-                class: if *selected.get() == i {
-                    "no-select item selected"
-                } else { "no-select item" },
+    entries.with(|entries| field_entries.with(|field_entries| {
+        let entries_current = field_entries.as_ref().unwrap_or(entries);
+        cx.render(rsx! {
+            for (i, &(element, _)) in filtered.iter().enumerate() {
                 div {
-                    class: "name",
-                    highlighted_text(field_entries.read().as_ref().unwrap_or(&entries.read()), element)
-                }
-                div {
-                    class: "comment",
-                    if let Some(comment) = entries.read()[element].comment() {
-                        comment
-                    } else { "" }
+                    key: "{i}",
+                    class: if *selected.get() == i {
+                        "no-select item selected"
+                    } else { "no-select item" },
+                    div {
+                        class: "name",
+                        highlighted_text(entries_current, element)
+                    }
+                    div {
+                        class: "comment",
+                        if let Some(comment) = entries_current[element].comment() {
+                            comment
+                        } else { "" }
+                    }
                 }
             }
-        }
-    })
+        })
+    }))
 }
 
 pub fn App(cx: Scope) -> Element {
