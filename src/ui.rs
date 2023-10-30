@@ -1,7 +1,7 @@
 use dioxus::{prelude::*, html::input_data::keyboard_types::{Code, Modifiers, Key}};
 use dioxus_desktop::PhysicalSize;
 
-use crate::search::{self, EntryTrait};
+use crate::search::{self, EntryTrait, Entry};
 
 fn set_window_properties(cx: Scope) {
     let window = dioxus_desktop::use_window(cx);
@@ -17,17 +17,31 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
     let matcher = use_ref(cx, fuzzy_matcher::skim::SkimMatcherV2::default);
     let selected = use_state(cx, || 0_usize);
 
-    let entries = use_ref(cx, search::create_entries);
-    let filtered = use_memo(cx, (entries, filter), |(entries, filter)| {
-        let filtered = search::filter_entries(&*matcher.read(), &entries.read(), &filter, 50);
+    let plugins = use_ref(cx, search::plugin::get_plugins);
+    let entries = use_ref(cx, || search::create_entries(&plugins.read()));
+
+    let field_entries = use_ref(cx, || None);
+
+    let filtered = use_memo(cx, (filter,), |(filter,)| {
+        let filtered = if let Some((plugin, filter)) = plugins.read().filter_starts_with_plugin(&filter) {
+            let fields: Vec<_> = plugin.generate().map(Entry::from).collect();
+            let filtered = search::filter_entries(&*matcher.read(), &fields, filter, 50);
+
+            field_entries.set(Some(fields));
+            filtered
+        } else {
+            field_entries.set(None);
+            search::filter_entries(&*matcher.read(), &entries.read(), &filter, 50)
+        };
+        
         // limit selected to the number of available choices when refiltering
         selected.set((*selected.get()).min(filtered.len().saturating_sub(1)));
 
         filtered
     });
 
-    let highlighted_text = |entry: usize| {
-        let entry = &entries.read()[entry];
+    let highlighted_text = |entries: &[Entry], entry: usize| {
+        let entry = &entries[entry];
         cx.render( rsx! {
             for (span, highlighted) in entry.fuzzy_match_span(&*matcher.read(), filter) {
                 span {
@@ -57,7 +71,7 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
                 } else { "no-select item" },
                 div {
                     class: "name",
-                    highlighted_text(element)
+                    highlighted_text(field_entries.read().as_ref().unwrap_or(&entries.read()), element)
                 }
                 div {
                     class: "comment",

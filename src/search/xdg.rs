@@ -1,15 +1,13 @@
 use std::{collections::HashMap, fs};
 
-use fuzzy_matcher::FuzzyMatcher;
 use tini::Ini;
 
-use super::{match_span::MatchSpan, EntryTrait};
+use super::EntryTrait;
 
-#[derive(Debug)]
 pub struct DesktopEntry {
     pub name: String,
     comment: Option<String>,
-    /// string that will be used for fuzzy matching
+    /// cache the string that will be used for fuzzy matching
     /// concatenation of name, generic name, categories and comment
     to_match: String
 }

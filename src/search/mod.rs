@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use enum_dispatch::enum_dispatch;
 use fuzzy_matcher::FuzzyMatcher;
 
-use self::{match_span::MatchSpan, xdg::DesktopEntry, plugin::PluginEntry};
+use self::{match_span::MatchSpan, xdg::DesktopEntry, plugin::{PluginEntry, Plugins, FieldEntry}};
 
 pub mod xdg;
-mod plugin;
+pub mod plugin;
 mod match_span;
 
 #[enum_dispatch]
@@ -39,12 +39,13 @@ pub trait EntryTrait {
 #[enum_dispatch(EntryTrait)]
 pub enum Entry {
     DesktopEntry,
-    PluginEntry
+    PluginEntry,
+    FieldEntry
 }
 
-pub fn create_entries() -> Vec<Entry> {
+pub fn create_entries(plugins: &Plugins) -> Vec<Entry> {
     xdg::desktop_entries().map(Entry::from)
-        .chain(plugin::plugin_entries().map(Entry::from))
+        .chain(plugin::plugin_entries(plugins).map(Entry::from))
         .collect()
 }
 
