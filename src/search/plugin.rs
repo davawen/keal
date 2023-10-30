@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::BufRead};
+use std::{collections::HashMap, io::{BufRead, BufReader}, process::{ChildStdout, ChildStdin}};
 
 use super::EntryTrait;
 
@@ -9,25 +9,40 @@ pub struct Plugin {
     pub exec: String
 }
 
+/// The execution of the currently typed plugin, used for RPC.
+/// The underlying process will get killed when it is dropped, so you don't have to fear zombie processes.
+#[derive(Debug)]
+pub struct PluginExecution {
+    pub prefix: String,
+    pub child: std::process::Child,
+    pub stdin: ChildStdin,
+    pub stdout: std::io::Lines<BufReader<ChildStdout>>,
+    pub entries: Vec<super::Entry>
+}
+
 impl Plugin {
-    pub fn generate(&self) -> impl Iterator<Item = FieldEntry> {
+    pub fn generate(&self) -> PluginExecution {
         use std::process::{Stdio, Command};
 
-        let mut plug = Command::new(&self.exec)
+        let mut child = Command::new(&self.exec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn().expect("Couldn't spawn process from plugin");
 
-        let stdout = plug.stdout.take().unwrap();
-        let stdout = std::io::BufReader::new(stdout);
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut stdout = std::io::BufReader::new(stdout).lines();
 
-        let mut v = vec![];
-        let mut current = None;
-        for line in stdout.lines().flatten() {
-            match line.get(0..2) {
-                Some("F:") => {
-                    if let Some(old) = current {
-                        v.push(old);
+        let mut entries = vec![];
+        let mut current: Option<FieldEntry> = None;
+
+        for line in stdout.by_ref() {
+            let Ok(line) = line else { continue };
+
+            match (&mut current, line.get(0..2)) {
+                (old, Some("F:")) => {
+                    if let Some(old) = old.take() {
+                        entries.push(old.into());
                     }
                     current = Some(FieldEntry {
                         field: line[2..].to_owned(),
@@ -35,22 +50,33 @@ impl Plugin {
                         comment: None
                     });
                 }
-                Some("I:") => if let Some(ref mut current) = current {
-                    current.icon = Some(line[2..].to_owned())
-                }
-                Some("C:") => if let Some(ref mut current) = current {
-                    current.comment = Some(line[2..].to_owned())
-                }
-                Some("E:") => if let Some(current) = current {
-                    v.push(current);
+                (Some(ref mut current), Some("I:")) => current.icon = Some(line[2..].to_owned()),
+                (Some(ref mut current), Some("C:")) => current.comment = Some(line[2..].to_owned()),
+                (current, Some("E:")) => {
+                    if let Some(current) = current.take() { entries.push(current.into()) }
                     break
                 }
-                Some(d) => panic!("unknown descriptor `{d}` in plugin {}", self.prefix),
-                None => panic!("no descriptor given in plugin {}", self.prefix)
+                (None, Some("I:" | "C:")) => eprintln!("using a modifier descriptor before setting a field in plugin `{}`", self.prefix),
+                (_, Some(d)) => eprintln!("unknown descriptor `{d}` in plugin `{}`", self.prefix),
+                (_, None) => eprintln!("no descriptor given in plugin `{}`", self.prefix)
             }
         }
 
-        v.into_iter()
+        PluginExecution {
+            prefix: self.prefix.clone(),
+            child, stdin, stdout, entries
+        }
+    }
+}
+
+impl Drop for PluginExecution {
+    fn drop(&mut self) {
+        match self.child.try_wait() {
+            Ok(Some(_)) => (), // process has already exited
+            _ => {
+                let _ = self.child.kill(); // ignore any resulting error
+            }
+        }
     }
 }
 
@@ -63,10 +89,6 @@ impl Plugins {
         let plugin = self.0.get(name)?;
 
         Some((plugin, remainder))
-    }
-
-    pub fn get(&self, prefix: &str) -> Option<&Plugin> {
-        self.0.get(prefix)
     }
 }
 

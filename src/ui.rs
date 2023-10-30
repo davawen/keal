@@ -1,6 +1,9 @@
 use dioxus::{prelude::*, html::input_data::keyboard_types::{Code, Modifiers, Key}};
 use dioxus_desktop::PhysicalSize;
 
+use fuzzy_matcher::skim::SkimMatcherV2;
+use lazy_static::lazy_static;
+
 use crate::search::{self, EntryTrait, Entry};
 
 fn set_window_properties(cx: Scope) {
@@ -12,49 +15,53 @@ fn set_window_properties(cx: Scope) {
     // window.devtool();
 }
 
-#[inline_props]
-fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Option<KeyboardData>) -> Element {
-    let matcher = use_ref(cx, fuzzy_matcher::skim::SkimMatcherV2::default);
+#[derive(Props, PartialEq)]
+struct ListProps {
+    filter: String,
+    #[props(!optional)]
+    keyboard: Option<KeyboardData>
+}
+
+fn List(cx: Scope<ListProps>) -> Element {
     let selected = use_state(cx, || 0_usize);
 
-    let plugins = use_ref(cx, search::plugin::get_plugins);
-    let entries = use_ref(cx, || search::create_entries(&plugins.read()));
+    lazy_static! {
+        static ref MATCHER: SkimMatcherV2 = SkimMatcherV2::default();
+        static ref PLUGINS: search::plugin::Plugins = search::plugin::get_plugins();
+        static ref ENTRIES: Vec<search::Entry> = search::create_entries(&PLUGINS);
+    }
 
-    let field_entries = use_ref(cx, || None);
-    let current_plugin = use_ref(cx, || None);
+    // let plugin_execution = use_ref(cx, || None);
+    // let filter = use_state(cx, || cx.props.filter.to_owned());
+    let filtered = use_state(cx, Vec::new);
 
-    let filtered = use_memo(cx, (filter,), |(filter,)| {
-        let filtered = if let Some((plugin, filter)) = plugins.read().filter_starts_with_plugin(&filter) {
-            let fields: Vec<_> = plugin.generate().map(Entry::from).collect();
-            let filtered = search::filter_entries(&*matcher.read(), &fields, filter, 50);
-
-            current_plugin.set(Some((plugin.prefix.clone(), filter.to_owned())));
-            field_entries.set(Some(fields));
-            filtered
+    let (plugin_execution, filter) = use_memo(cx, (&cx.props.filter,), |(prop_filter,)| {
+        let (plugin, new_filter) = if let Some((plugin, remaining)) = PLUGINS.filter_starts_with_plugin(&prop_filter) {
+            (Some(plugin.generate()), remaining.to_owned())
         } else {
-            field_entries.set(None);
-            search::filter_entries(&*matcher.read(), &entries.read(), &filter, 50)
+            (None, prop_filter)
         };
-        
+
+        filtered.set(match &plugin {
+            Some(execution) => search::filter_entries(&*MATCHER, &execution.entries, &new_filter, 50),
+            None            => search::filter_entries(&*MATCHER, &ENTRIES, &new_filter, 50),
+        });
+
         // limit selected to the number of available choices when refiltering
         selected.set((*selected.get()).min(filtered.len().saturating_sub(1)));
 
-        filtered
+        // plugin_execution.set(plugin);
+        // filter.set(new_filter);
+        (plugin, new_filter)
     });
 
-    let highlighted_text = |entries: &[Entry], entry: usize| {
-        let entry = &entries[entry];
-        cx.render( rsx! {
-            for (span, highlighted) in entry.fuzzy_match_span(&*matcher.read(), current_plugin.read().as_ref().map(|x| &x.1).unwrap_or(filter)) {
-                span {
-                    class: if highlighted { "text-matched" } else { "text-normal" },
-                    "{span}"
-                }
-            }
-        })
+    // it's just not possible to get lifetimes to work with this inside the `use_memo` :(
+    let entries = match plugin_execution {
+        Some(execution) => &execution.entries,
+        None => &ENTRIES
     };
 
-    use_memo(cx, (keyboard,), |(keyboard,)| {
+    use_memo(cx, (&cx.props.keyboard,), |(keyboard,)| {
         let Some(keyboard) = keyboard else { return };
 
         match (keyboard.code(), keyboard.modifiers()) {
@@ -63,30 +70,39 @@ fn List(cx: Scope<ListProps>, filter: String, #[props(!optional)] keyboard: Opti
             _ => unreachable!()
         }
     });
-
-    entries.with(|entries| field_entries.with(|field_entries| {
-        let entries_current = field_entries.as_ref().unwrap_or(entries);
-        cx.render(rsx! {
-            for (i, &(element, _)) in filtered.iter().enumerate() {
-                div {
-                    key: "{i}",
-                    class: if *selected.get() == i {
-                        "no-select item selected"
-                    } else { "no-select item" },
-                    div {
-                        class: "name",
-                        highlighted_text(entries_current, element)
-                    }
-                    div {
-                        class: "comment",
-                        if let Some(comment) = entries_current[element].comment() {
-                            comment
-                        } else { "" }
-                    }
+        
+    let highlighted_text = |entry: Option<&Entry>| {
+        let entry = entry?;
+        cx.render( rsx! {
+            for (span, highlighted) in entry.fuzzy_match_span(&*MATCHER, filter) {
+                span {
+                    class: if highlighted { "text-matched" } else { "text-normal" },
+                    "{span}"
                 }
             }
         })
-    }))
+    };
+
+    cx.render(rsx! {
+        for (i, &(element, _)) in filtered.iter().enumerate() {
+            div {
+                key: "{i}",
+                class: if *selected.get() == i {
+                    "no-select item selected"
+                } else { "no-select item" },
+                div {
+                    class: "name",
+                    highlighted_text(entries.get(element))
+                }
+                div {
+                    class: "comment",
+                    if let Some(Some(comment)) = entries.get(element).map(|x| x.comment()) {
+                        comment
+                    } else { "" }
+                }
+            }
+        }
+    })
 }
 
 pub fn App(cx: Scope) -> Element {
@@ -121,7 +137,7 @@ pub fn App(cx: Scope) -> Element {
             div {
                 class: "list",
                 List {
-                    filter: filter.get().clone(),
+                    filter: filter.get().to_owned(),
                     keyboard: if keyboard.get().is_some() {
                         keyboard.make_mut().take()
                     } else { None }

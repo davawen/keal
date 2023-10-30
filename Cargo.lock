@@ -1429,6 +1429,7 @@ dependencies = [
  "dioxus-desktop",
  "enum_dispatch",
  "fuzzy-matcher",
+ "lazy_static",
  "tini",
 ]
 
