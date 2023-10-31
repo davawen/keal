@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use dioxus::{prelude::*, html::input_data::keyboard_types::{Code, Modifiers, Key}};
 use dioxus_desktop::PhysicalSize;
 
@@ -34,31 +36,53 @@ fn List(cx: Scope<ListProps>) -> Element {
     // let plugin_execution = use_ref(cx, || None);
     // let filter = use_state(cx, || cx.props.filter.to_owned());
     let filtered = use_state(cx, Vec::new);
+    let plugin_execution = use_ref(cx, || None);
 
-    let (plugin_execution, filter) = use_memo(cx, (&cx.props.filter,), |(prop_filter,)| {
-        let (plugin, new_filter) = if let Some((plugin, remaining)) = PLUGINS.filter_starts_with_plugin(&prop_filter) {
+    let filter = use_memo(cx, (&cx.props.filter,), |(prop_filter,)| {
+        let (plugin, filter) = if let Some((plugin, remaining)) = PLUGINS.filter_starts_with_plugin(&prop_filter) {
             (Some(plugin.generate()), remaining.to_owned())
         } else {
             (None, prop_filter)
         };
 
         filtered.set(match &plugin {
-            Some(execution) => search::filter_entries(&*MATCHER, &execution.entries, &new_filter, 50),
-            None            => search::filter_entries(&*MATCHER, &ENTRIES, &new_filter, 50),
+            Some(execution) => search::filter_entries(&*MATCHER, &execution.entries, &filter, 50),
+            None            => search::filter_entries(&*MATCHER, &ENTRIES, &filter, 50),
         });
 
         // limit selected to the number of available choices when refiltering
         selected.set((*selected.get()).min(filtered.len().saturating_sub(1)));
 
-        // plugin_execution.set(plugin);
-        // filter.set(new_filter);
-        (plugin, new_filter)
+        plugin_execution.set(plugin);
+        filter
     });
 
-    // it's just not possible to get lifetimes to work with this inside the `use_memo` :(
-    let entries = match plugin_execution {
-        Some(execution) => &execution.entries,
-        None => &ENTRIES
+
+    let window = dioxus_desktop::use_window(cx);
+    let interact = || {
+        let selected = *selected.get();
+        let selected = filtered[selected].0;
+        let mut plugin_execution = plugin_execution.write_silent();
+
+        match plugin_execution.as_mut() {
+            Some(plugin) => match &plugin.entries[selected] {
+                Entry::FieldEntry(field) => {
+                    let _ = writeln!(plugin.stdin, "{}", field.name());
+                    let _ = plugin.child.wait();
+                    window.close();
+                }
+                _ => unreachable!("something went terribly wrong")
+            }
+            None => match &ENTRIES[selected] {
+                Entry::PluginEntry(plugin) => {
+                    todo!("fill in plugin into input")
+                }
+                Entry::DesktopEntry(app) => {
+                    todo!("launch application")
+                }
+                _ => unreachable!("something went terribly wrong")
+            }
+        }
     };
 
     use_memo(cx, (&cx.props.keyboard,), |(keyboard,)| {
@@ -67,12 +91,12 @@ fn List(cx: Scope<ListProps>) -> Element {
         match (keyboard.code(), keyboard.modifiers()) {
             (Code::KeyJ, Modifiers::CONTROL) => selected.set((selected.get() + 1).min(filtered.len().saturating_sub(1))),
             (Code::KeyK, Modifiers::CONTROL) => selected.set(selected.get().saturating_sub(1)),
+            (Code::Enter, _)                 => interact(),
             _ => unreachable!()
         }
     });
-        
-    let highlighted_text = |entry: Option<&Entry>| {
-        let entry = entry?;
+
+    let highlighted_text = |entry: &Entry| {
         cx.render( rsx! {
             for (span, highlighted) in entry.fuzzy_match_span(&*MATCHER, filter) {
                 span {
@@ -81,6 +105,13 @@ fn List(cx: Scope<ListProps>) -> Element {
                 }
             }
         })
+    };
+
+    // it's just not possible to get lifetimes to work with this inside the `use_memo` :(
+    let plugin_execution = plugin_execution.read();
+    let entries = match &*plugin_execution {
+        Some(execution) => &execution.entries,
+        None => &ENTRIES
     };
 
     cx.render(rsx! {
@@ -92,11 +123,11 @@ fn List(cx: Scope<ListProps>) -> Element {
                 } else { "no-select item" },
                 div {
                     class: "name",
-                    highlighted_text(entries.get(element))
+                    highlighted_text(&entries[element])
                 }
                 div {
                     class: "comment",
-                    if let Some(Some(comment)) = entries.get(element).map(|x| x.comment()) {
+                    if let Some(comment) = entries[element].comment() {
                         comment
                     } else { "" }
                 }
@@ -111,9 +142,8 @@ pub fn App(cx: Scope) -> Element {
     let keyboard = use_state(cx, || None);
     let transmit_keyboard = move |event: Event<KeyboardData>| {
         match (event.key(), event.code(), event.modifiers()) {
-            (_, Code::KeyK | Code::KeyJ, Modifiers::CONTROL) => keyboard.set(Some((*event.data).clone())),
+            (_, Code::KeyK | Code::KeyJ, Modifiers::CONTROL) | (_, Code::Enter, _) => keyboard.set(Some((*event.data).clone())),
             (Key::Escape, ..) => dioxus_desktop::use_window(cx).close(),
-            (Key::Enter, ..) => todo!("launch application"),
             _ => ()
         }
     };
