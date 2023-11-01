@@ -1,19 +1,29 @@
 #![allow(non_snake_case)]
 
-use dioxus_desktop::{Config, WindowBuilder};
+// use dioxus_desktop::{Config, WindowBuilder};
+
+use iced::{Application, Settings, window, Font, font};
 
 mod search;
 mod ui;
 
-fn main() {
-    dioxus_desktop::launch_with_props(ui::App, (), Config::new()
-        .with_window(WindowBuilder::new()
-            .with_resizable(false)
-            .with_always_on_top(true)
-            .with_transparent(true)
-            .with_decorations(false)
-            .with_title("Keal")
-        )
-        .with_custom_head(r#"<link rel="stylesheet" href="public/style.css" />"#.to_owned())
-    );
+fn main() -> iced::Result {
+    ui::Keal::run(Settings {
+        window: window::Settings {
+            size: (1920/3, 1080/2),
+            position: window::Position::Centered,
+            resizable: false,
+            decorations: false,
+            transparent: true,
+            level: window::Level::AlwaysOnTop,
+            ..Default::default()
+        },
+        default_font: Font {
+            family: font::Family::Name("Iosevka"),
+            weight: font::Weight::Normal,
+            stretch: font::Stretch::Normal,
+            monospaced: false
+        },
+        ..Default::default()
+    })
 }

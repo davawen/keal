@@ -33,7 +33,6 @@ input {
 }
 
 input:focus {
-	border-bottom: 10px red;
 	outline: none;
 }
 
