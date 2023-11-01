@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, process, os::unix::process::CommandExt};
 
 use fuzzy_matcher::skim::SkimMatcherV2;
 use iced::{Application, Theme, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button}, theme, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
@@ -70,58 +70,15 @@ impl Application for Keal {
         (this, Command::batch(vec![iosevka, focus]))
     }
 
-    fn title(&self) -> String {
-        "Keal".to_owned()
-    }
-
-    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
-        use keyboard::Event::KeyPressed;
-        match message {
-            Message::FontLoaded(_) => (),
-            Message::TextInput(input) => self.update_input(input),
-            Message::Event(event) => match event {
-                KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
-                KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
-                    self.selected += 1;
-                    self.selected = self.selected.min(self.shown.filtered().len().saturating_sub(1));
-                }
-                KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL }
-                | KeyPressed { key_code: KeyCode::Up, .. } => {
-                    self.selected = self.selected.saturating_sub(1);
-                }
-                _ => ()
-            }
-            Message::Launch(selected) => match &mut self.shown {
-                Shown::Plugin { execution, filtered } => match &execution.entries[filtered[selected].0] {
-                    Entry::FieldEntry(field) => {
-                        let _ = writeln!(execution.stdin, "{}", field.name());
-                        let _ = execution.child.wait();
-                        return iced::window::close();
-                    }
-                    _ => unreachable!("something went terribly wrong")
-                }
-                Shown::Entries(filtered) => match &self.entries[filtered[selected].0] {
-                    Entry::PluginEntry(plugin) => {
-                        let input = format!("{} ", plugin.name());
-                        self.update_input(input);
-                        return text_input::move_cursor_to_end(text_input::Id::new("filter_input"));
-                    }
-                    Entry::DesktopEntry(_app) => {
-                        todo!("launch application")
-                    }
-                    _ => unreachable!("something went terribly wrong")
-                }
-            }
-        };
-
-        Command::none()
-    }
-
     fn subscription(&self) -> iced::Subscription<Self::Message> {
         subscription::events_with(|event, _status| match event {
             Event::Keyboard(k) => Some(Message::Event(k)),
             _ => None
         })
+    }
+
+    fn title(&self) -> String {
+        "Keal".to_owned()
     }
 
     fn theme(&self) -> Self::Theme {
@@ -183,6 +140,55 @@ impl Application for Keal {
         icolumn![ input, entries ]
             .width(Length::Fill).height(Length::Fill)
             .into()
+    }
+
+    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+        use keyboard::Event::KeyPressed;
+        match message {
+            Message::FontLoaded(_) => (),
+            Message::TextInput(input) => self.update_input(input),
+            Message::Event(event) => match event {
+                KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
+                KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
+                    self.selected += 1;
+                    self.selected = self.selected.min(self.shown.filtered().len().saturating_sub(1));
+                }
+                KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL }
+                | KeyPressed { key_code: KeyCode::Up, .. } => {
+                    self.selected = self.selected.saturating_sub(1);
+                }
+                _ => ()
+            }
+            Message::Launch(selected) => match &mut self.shown {
+                Shown::Plugin { execution, filtered } => match &execution.entries[filtered[selected].0] {
+                    Entry::FieldEntry(field) => {
+                        let _ = writeln!(execution.stdin, "{}", field.name());
+                        let _ = execution.child.wait();
+                        return iced::window::close();
+                    }
+                    _ => unreachable!("something went terribly wrong")
+                }
+                Shown::Entries(filtered) => match &self.entries[filtered[selected].0] {
+                    Entry::PluginEntry(plugin) => {
+                        let input = format!("{} ", plugin.name());
+                        self.update_input(input);
+                        return text_input::move_cursor_to_end(text_input::Id::new("filter_input"));
+                    }
+                    Entry::DesktopEntry(app) => {
+                         // TODO: parse XDG desktop parameters
+                        process::Command::new("sh") // ugly work around to avoir parsing spaces/quotes
+                            .arg("-c")
+                            .arg(&app.exec)
+                            .exec();
+
+                        return iced::window::close()
+                    }
+                    _ => unreachable!("something went terribly wrong")
+                }
+            }
+        };
+
+        Command::none()
     }
 }
 

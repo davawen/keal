@@ -6,27 +6,29 @@ use super::EntryTrait;
 
 #[derive(Debug)]
 pub struct DesktopEntry {
-    pub name: String,
+    name: String,
     comment: Option<String>,
     /// cache the string that will be used for fuzzy matching
     /// concatenation of name, generic name, categories and comment
-    to_match: String
+    to_match: String,
+    pub exec: String
 }
 
 impl DesktopEntry {
-    fn new(mut ini: HashMap<String, String>) -> Self {
-        let name = ini.remove("Name").unwrap();
+    fn new(mut ini: HashMap<String, String>) -> Option<Self> {
+        let name = ini.remove("Name")?;
+        let exec = ini.remove("Exec")?;
         let comment = ini.remove("Comment");
-        DesktopEntry {
+
+        Some(DesktopEntry {
             to_match: format!(
                 "{name}{}{}{}",
                 ini.get("GenericName").map(String::as_ref).unwrap_or(""),
                 ini.get("Categories").map(String::as_ref).unwrap_or(""),
                 comment.as_deref().unwrap_or(""),
             ),
-            name,
-            comment
-        }
+            name, comment, exec
+        })
     }
 }
 
@@ -59,7 +61,7 @@ pub fn desktop_entries() -> impl Iterator<Item = DesktopEntry> {
             .filter(|path| path.extension().map(|e| e == "desktop").unwrap_or(false))
             .flat_map(|path| Ini::from_file(&path))
             .map(|ini| ini.section_iter("Desktop Entry").map(|(a, b)| (a.to_owned(), b.to_owned())).collect::<HashMap<_, _>>())
-            .map(DesktopEntry::new);
+            .flat_map(DesktopEntry::new);
         
         std::io::Result::Ok(entries) // type annotations needed
     }).flatten()
