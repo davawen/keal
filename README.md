@@ -9,8 +9,17 @@ TODO: write readme
 
 ## Plugins
 
+Plugins are placed in `~/.config/keal/plugins/<name>`.
+Characteristics are described in a `config.ini` file:
+```ini
+[plugin]
+prefix = sm ; What the user needs to type
+comment = Manage current session ; (optional) Comment shown on the right
+exec = exec.sh ; Executable, from the plugin's directory
+type = text ; text or json
+```
+
 Plugins communicate via `stdio`, the goal is for plugins to be as simple and universal as possible.  
-You can configure plugins to either use text or json communication.
 
 Text plugins are for small, dmenu like utils:
 - Keal starts the plugin
@@ -21,17 +30,16 @@ Text plugins are for small, dmenu like utils:
 Concretely, here is how communication looks like:
 ```
 (start up)
-<- F:firefox
-<- I:com.firefox.icon
-<- F:chromium
-<- C:Google's browser
-<- F:edge
-<- E:
+<- -firefox
+<- *com.firefox.icon
+<- -chromium
+<- =Google's browser
+<- -edge
+<- %
 -> firefox
 (launches firefox)
 ```
 
-Different options are indicated by a letter followed by a colon.
-Choices are started by a capital F.
-You can optionally add an icon and a comment with I and C.  
-When the choice list is over, it sends out `E:`, and waits on stdin.
+Different options are indicated by a symbol followed by their value.
+Choices are started with dashes, you can optionally add an icon or a comment with `*` and `=`.
+When the choice list is over, send out `%`, and wait on stdin for a response.

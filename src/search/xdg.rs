@@ -1,6 +1,7 @@
-use std::{collections::HashMap, fs};
+use std::collections::HashMap;
 
 use tini::Ini;
+use walkdir::WalkDir;
 
 use super::EntryTrait;
 
@@ -15,7 +16,12 @@ pub struct DesktopEntry {
 }
 
 impl DesktopEntry {
-    fn new(mut ini: HashMap<String, String>) -> Option<Self> {
+    fn new(ini: Ini) -> Option<Self> {
+        let mut ini: HashMap<_, _> = ini
+            .section_iter("Desktop Entry")
+            .map(|(a, b)| (a.to_owned(), b.to_owned()))
+            .collect();
+
         let name = ini.remove("Name")?;
         let exec = ini.remove("Exec")?;
         let comment = ini.remove("Comment");
@@ -52,15 +58,16 @@ pub fn desktop_entries() -> impl Iterator<Item = DesktopEntry> {
     let app_dirs = xdg_directories("applications");
 
     app_dirs.into_iter().flat_map(|path| {
-        let entries = fs::read_dir(path)?;
+        let entries = WalkDir::new(path)
+            .follow_links(true)
+            .into_iter();
 
         let entries = entries
             .flatten()
             .filter(|entry| entry.metadata().map(|x| !x.is_dir()).unwrap_or(true))
-            .map(|entry| entry.path())
+            .map(|entry| entry.into_path())
             .filter(|path| path.extension().map(|e| e == "desktop").unwrap_or(false))
             .flat_map(|path| Ini::from_file(&path))
-            .map(|ini| ini.section_iter("Desktop Entry").map(|(a, b)| (a.to_owned(), b.to_owned())).collect::<HashMap<_, _>>())
             .flat_map(DesktopEntry::new);
         
         std::io::Result::Ok(entries) // type annotations needed
