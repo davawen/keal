@@ -60,6 +60,7 @@ pub fn xdg_directories(dir: &str) -> Vec<String> {
 }
 
 /// Returns the list of all applications on the system
+/// Uses `collisions` to avoid putting the same application twice in the list
 pub fn desktop_entries() -> impl Iterator<Item = DesktopEntry> {
     let app_dirs = xdg_directories("applications");
 

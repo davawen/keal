@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use enum_dispatch::enum_dispatch;
 use fuzzy_matcher::FuzzyMatcher;
 
@@ -45,7 +47,10 @@ pub enum Entry {
 }
 
 pub fn create_entries(plugins: &Plugins) -> Vec<Entry> {
-    xdg::desktop_entries().map(Entry::from)
+    let mut collisions = HashSet::new();
+
+    xdg::desktop_entries()
+        .filter(|entry| collisions.insert(entry.name().to_owned())).map(Entry::from)
         .chain(plugin::plugin_entries(plugins).map(Entry::from))
         .collect()
 }
