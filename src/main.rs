@@ -6,6 +6,7 @@ use iced::{Application, Settings, window, Font, font};
 
 mod search;
 mod ui;
+mod icon;
 
 fn main() -> iced::Result {
     ui::Keal::run(Settings {

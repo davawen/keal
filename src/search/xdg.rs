@@ -12,7 +12,8 @@ pub struct DesktopEntry {
     /// cache the string that will be used for fuzzy matching
     /// concatenation of name, generic name, categories and comment
     to_match: String,
-    pub exec: String
+    pub exec: String,
+    pub icon: Option<String>
 }
 
 impl DesktopEntry {
@@ -23,17 +24,18 @@ impl DesktopEntry {
             .collect();
 
         let name = ini.remove("Name")?;
-        let exec = ini.remove("Exec")?;
         let comment = ini.remove("Comment");
+        let to_match = format!("{name}{}{}{}",
+            ini.get("GenericName").map(String::as_ref).unwrap_or(""),
+            ini.get("Categories").map(String::as_ref).unwrap_or(""),
+            comment.as_deref().unwrap_or(""),
+        );
+        let exec = ini.remove("Exec")?;
+        let icon = ini.remove("Icon");
 
         Some(DesktopEntry {
-            to_match: format!(
-                "{name}{}{}{}",
-                ini.get("GenericName").map(String::as_ref).unwrap_or(""),
-                ini.get("Categories").map(String::as_ref).unwrap_or(""),
-                comment.as_deref().unwrap_or(""),
-            ),
-            name, comment, exec
+            name, comment, to_match,
+            exec, icon
         })
     }
 }
@@ -41,11 +43,15 @@ impl DesktopEntry {
 impl EntryTrait for DesktopEntry {
     fn name(&self) ->  &str { &self.name }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
+    fn icon(&self) -> Option<&str> { self.icon.as_deref() }
     fn to_match(&self) ->  &str { &self.to_match }
 }
 
-fn xdg_directories(dir: &str) -> Vec<String> {
-    let mut data_dirs = std::env::var("XDG_DATA_DIRS").map(|dirs| dirs.split(':').map(str::to_owned).collect()).unwrap_or(vec![]);
+pub fn xdg_directories(dir: &str) -> Vec<String> {
+    let mut data_dirs: Vec<_> = std::env::var("XDG_DATA_DIRS")
+        .map(|dirs| dirs.split(':').map(str::to_owned).collect())
+        .unwrap_or_default();
+
     if let Ok(home) = std::env::var("HOME") {
         data_dirs.push(format!("{home}/.local/share"));
     }

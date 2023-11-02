@@ -1,9 +1,9 @@
 use std::{io::Write, process, os::unix::process::CommandExt};
 
 use fuzzy_matcher::skim::SkimMatcherV2;
-use iced::{Application, Theme, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button}, theme, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
+use iced::{Application, Theme, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, theme, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 
-use crate::search::{self, plugin::{get_plugins, PluginExecution}, create_entries, EntryTrait, Entry};
+use crate::{search::{self, plugin::{get_plugins, PluginExecution}, create_entries, EntryTrait, Entry}, icon::{IconCache, Icon}};
 
 mod styled;
 
@@ -16,7 +16,8 @@ pub struct Keal {
     plugins: search::plugin::Plugins,
     entries: Vec<search::Entry>,
     shown: Shown,
-    selected: usize
+    selected: usize,
+    icons: IconCache
 }
 
 enum Shown {
@@ -54,12 +55,15 @@ impl Application for Keal {
         let plugins = get_plugins();
         let entries = create_entries(&plugins);
         let filtered = entries.iter().take(50).enumerate().map(|(i, _)| (i, 0)).collect();
+        let icons = IconCache::new("hicolor");
+
         let this = Keal {
             input: String::new(), filter: String::new(),
             matcher: Matcher::default(),
             plugins, entries,
             shown: Shown::Entries(filtered),
-            selected: 0
+            selected: 0,
+            icons
         };
 
         let focus = text_input::focus(text_input::Id::new("filter_input")); // focus input on start up
@@ -112,7 +116,18 @@ impl Application for Keal {
                 let entry = &entries[entry];
                 let selected = self.selected == index;
 
-                let mut item = vec![];
+                let mut item = irow(vec![]);
+
+                if let Some(icon) = entry.icon() {
+                    if let Some(icon) = self.icons.get(icon) {
+                        let element: Element<_> = match icon {
+                            Icon::Svg(path) => svg(svg::Handle::from_path(path)).width(16).height(16).into(),
+                            Icon::Other(path) => image(path).width(16).height(16).into()
+                        };
+                        item = item.push(container(element).padding(4));
+                    }
+                }
+
                 for (span, highlighted) in entry.fuzzy_match_span(&self.matcher, &self.filter) {
                     let style = match highlighted {
                         false => theme::Text::Default,
@@ -121,12 +136,12 @@ impl Application for Keal {
                         )
                     };
 
-                    item.push(text(span).style(style).into());
+                    item = item.push(text(span).style(style));
                 }
-                item.push(Space::with_width(Length::Fill).into());
-                item.push(text(entry.comment().unwrap_or("")).style(theme::Text::Color(*styled::COMMENT_COLOR)).into());
+                item = item.push(Space::with_width(Length::Fill));
+                item = item.push(text(entry.comment().unwrap_or("")).style(theme::Text::Color(*styled::COMMENT_COLOR)));
 
-                button(irow(item))
+                button(item)
                     .on_press(Message::Launch(index))
                     .style(
                         if selected { theme::Button::custom(styled::SelectedItem) }

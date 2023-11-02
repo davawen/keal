@@ -15,6 +15,7 @@ Characteristics are described in a `config.ini` file:
 [plugin]
 prefix = sm ; What the user needs to type
 comment = Manage current session ; (optional) Comment shown on the right
+icon = user ; (optional) Plugin icon
 exec = exec.sh ; Executable, from the plugin's directory
 type = text ; text or json
 ```

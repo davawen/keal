@@ -8,6 +8,7 @@ use super::EntryTrait;
 pub struct Plugin {
     pub prefix: String,
     pub comment: Option<String>,
+    pub icon: Option<String>,
     pub exec: PathBuf,
     pub kind: PluginKind
 }
@@ -48,6 +49,7 @@ impl Plugin {
         Some(Self {
             prefix: ini.remove("prefix")?,
             comment: ini.remove("comment"),
+            icon: ini.remove("icon"),
             exec: plugin_path.join(ini.remove("exec")?),
             kind: ini.remove("type")?.parse().ok()?
         })
@@ -148,29 +150,32 @@ pub fn get_plugins() -> Plugins {
 #[derive(Debug)]
 pub struct PluginEntry {
     prefix: String,
-    comment: Option<String>
+    comment: Option<String>,
+    icon: Option<String>
 }
 
 impl EntryTrait for PluginEntry {
     fn name(&self) ->  &str { &self.prefix }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
+    fn icon(&self) -> Option<&str> { self.icon.as_deref() }
     fn to_match(&self) ->  &str { &self.prefix }
 }
 
 pub fn plugin_entries(plugins: &Plugins) -> impl Iterator<Item = PluginEntry> + '_ {
     plugins.0.values()
-        .map(|plugin| PluginEntry { prefix: plugin.prefix.clone(), comment: plugin.comment.clone() })
+        .map(|plugin| PluginEntry { prefix: plugin.prefix.clone(), comment: plugin.comment.clone(), icon: plugin.icon.clone() })
 }
 
 #[derive(Debug)]
 pub struct FieldEntry {
     field: String,
-    icon: Option<String>,
-    comment: Option<String>
+    comment: Option<String>,
+    icon: Option<String>
 }
 
 impl EntryTrait for FieldEntry {
     fn name(&self) ->  &str { &self.field }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
+    fn icon(&self) -> Option<&str> { self.icon.as_deref() }
     fn to_match(&self) ->  &str { &self.field }
 }

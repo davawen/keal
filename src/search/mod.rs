@@ -11,6 +11,7 @@ mod match_span;
 pub trait EntryTrait {
     fn name(&self) -> &str;
     fn comment(&self) -> Option<&str>;
+    fn icon(&self) -> Option<&str>;
     /// what should be used to match the entry
     fn to_match(&self) -> &str;
 
@@ -25,7 +26,7 @@ pub trait EntryTrait {
 
         MatchSpan {
             item: self.name(),
-            matched: matcher.fuzzy_indices(self.name(), filter).map(|(_, v)| v).unwrap_or(vec![]),
+            matched: matcher.fuzzy_indices(self.name(), filter).map(|(_, v)| v).unwrap_or_default(),
             matched_index: 0,
             byte_offset: 0,
             index: 0,
@@ -62,14 +63,3 @@ pub fn filter_entries(matcher: &impl FuzzyMatcher, entries: &[Entry], filter: &s
     filtered.truncate(n);
     filtered
 }
-
-// /// Links an icon name to its path
-// #[derive(Debug)]
-// pub struct IconCache(HashMap<String, String>);
-//
-// fn icon_cache(icon_theme: &str) -> IconCache {
-//     // let mut icon_dirs = xdg_directories("icons");
-//     // icon_dirs.push("/usr/share/pixmaps".to_owned());
-//
-//     todo!()
-// }
