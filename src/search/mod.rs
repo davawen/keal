@@ -47,6 +47,7 @@ pub enum Entry {
 }
 
 pub fn create_entries(plugins: &Plugins) -> Vec<Entry> {
+    // TODO: smarter collision checks (prefer entries with comments/no mime type), maybe store every entry in an IndexMap?
     let mut collisions = HashSet::new();
 
     xdg::desktop_entries()

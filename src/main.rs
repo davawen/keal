@@ -21,9 +21,9 @@ fn main() -> iced::Result {
         },
         default_font: Font {
             family: font::Family::Name("Iosevka"),
-            weight: font::Weight::Normal,
+            weight: font::Weight::Medium,
             stretch: font::Stretch::Normal,
-            monospaced: false
+            monospaced: true
         },
         ..Default::default()
     })

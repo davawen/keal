@@ -1,5 +1,6 @@
 use std::{io::Write, process, os::unix::process::CommandExt};
 
+use fork::{fork, Fork};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use iced::{Application, Theme, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, theme, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 
@@ -11,7 +12,7 @@ type Matcher = SkimMatcherV2;
 
 pub struct Keal {
     input: String,
-    filter: String,
+    query: String,
     matcher: Matcher,
     plugins: search::plugin::Plugins,
     entries: Vec<search::Entry>,
@@ -58,7 +59,7 @@ impl Application for Keal {
         let icons = IconCache::new("hicolor");
 
         let this = Keal {
-            input: String::new(), filter: String::new(),
+            input: String::new(), query: String::new(),
             matcher: Matcher::default(),
             plugins, entries,
             shown: Shown::Entries(filtered),
@@ -66,7 +67,7 @@ impl Application for Keal {
             icons
         };
 
-        let focus = text_input::focus(text_input::Id::new("filter_input")); // focus input on start up
+        let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
         let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
         let iosevka = font::load(iosevka.as_slice()).map(Message::FontLoaded);
@@ -101,7 +102,7 @@ impl Application for Keal {
             .on_submit(Message::Launch(self.selected))
             .size(20).padding(16)
             .style(theme::TextInput::Custom(Box::new(styled::Input)))
-            .id(text_input::Id::new("filter_input"));
+            .id(text_input::Id::new("query_input"));
 
         let input = container(input)
             .width(Length::Fill);
@@ -128,7 +129,7 @@ impl Application for Keal {
                     }
                 }
 
-                for (span, highlighted) in entry.fuzzy_match_span(&self.matcher, &self.filter) {
+                for (span, highlighted) in entry.fuzzy_match_span(&self.matcher, &self.query) {
                     let style = match highlighted {
                         false => theme::Text::Default,
                         true => theme::Text::Color(
@@ -175,19 +176,46 @@ impl Application for Keal {
                 _ => ()
             }
             Message::Launch(selected) => match &mut self.shown {
-                Shown::Plugin { execution, filtered } => match &execution.entries[filtered[selected].0] {
-                    Entry::FieldEntry(field) => {
-                        let _ = writeln!(execution.stdin, "{}", field.name());
-                        let _ = execution.child.wait();
-                        return iced::window::close();
+                Shown::Plugin { execution, filtered } => match filtered.get(selected).map(|&(i, _)| &execution.entries[i]) {
+                    Some(Entry::FieldEntry(_)) => {
+                        let _ = writeln!(execution.stdin, "{}", filtered[selected].0);
+                        let action = execution.stdout.next().expect("no action given by plugin").unwrap();
+
+                        match action.as_str() {
+                            "fork" => match fork().expect("failed to fork") {
+                                Fork::Parent(_) => return iced::window::close(),
+                                Fork::Child => ()
+                            }
+                            "wait_and_close" => {
+                                let _ = execution.child.wait();
+                                return iced::window::close();
+                            }
+                            s if s.starts_with("change_input:") => {
+                                let s = s.strip_prefix("change_input:").unwrap();
+                                self.update_input(s.to_owned());
+                                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+                            },
+                            s if s.starts_with("change_query:") => {
+                                let s = s.strip_prefix("change_query:").unwrap();
+                                let input = format!("{} {}", execution.prefix, s);
+                                self.update_input(input);
+                                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+                            },
+                            _ => {
+                                eprintln!("unknown action: {action} given by plugin {}", execution.prefix);
+                                return iced::window::close();
+                            }
+                        }
+                        
                     }
-                    _ => unreachable!("something went terribly wrong")
+                    None => (),
+                    Some(_) => unreachable!("something went terribly wrong")
                 }
                 Shown::Entries(filtered) => match &self.entries[filtered[selected].0] {
                     Entry::PluginEntry(plugin) => {
                         let input = format!("{} ", plugin.name());
                         self.update_input(input);
-                        return text_input::move_cursor_to_end(text_input::Id::new("filter_input"));
+                        return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
                     }
                     Entry::DesktopEntry(app) => {
                          // TODO: parse XDG desktop parameters
@@ -213,7 +241,7 @@ impl Keal {
 
         // launch or stop plugin execution depending on new state of filter
         // if in plugin mode, remove plugin prefix from filter
-        self.filter = match (self.plugins.filter_starts_with_plugin(&self.input), &self.shown) {
+        self.query = match (self.plugins.filter_starts_with_plugin(&self.input), &mut self.shown) {
             (Some((plugin, remainder)), Shown::Entries(_)) => { // launch plugin
                 self.shown = Shown::Plugin { 
                     execution: plugin.generate(),
@@ -221,18 +249,27 @@ impl Keal {
                 };
                 remainder.to_owned()
             }
+            (Some((plugin, remainer)), Shown::Plugin { execution, .. }) => {
+                // relaunch plugin if it is done executing or if we're currently executing the wrong plugin
+                if execution.child.try_wait().unwrap().is_some() || plugin.prefix != execution.prefix {
+                    self.shown = Shown::Plugin { 
+                        execution: plugin.generate(),
+                        filtered: Vec::new() // filter happens right after
+                    };
+                }
+                remainer.to_owned()
+            }
             (None, Shown::Plugin { .. }) => { // stop plugin
                 self.shown = Shown::Entries(Vec::new());
                 self.input.clone()
             }
-            (Some((_, remainer)), Shown::Plugin { .. }) => remainer.to_owned(),
             (None, Shown::Entries(_)) => self.input.clone()
         };
 
         match &mut self.shown {
-            Shown::Entries(filtered) => *filtered = search::filter_entries(&self.matcher, &self.entries, &self.filter, 50),
+            Shown::Entries(filtered) => *filtered = search::filter_entries(&self.matcher, &self.entries, &self.query, 50),
             Shown::Plugin { execution, filtered } =>
-                *filtered = search::filter_entries(&self.matcher, &execution.entries, &self.filter, 50)
+                *filtered = search::filter_entries(&self.matcher, &execution.entries, &self.query, 50)
         }
     }
 }
