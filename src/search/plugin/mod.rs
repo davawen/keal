@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fs, str::FromStr, path::{Path, PathBuf}};
+use std::{collections::HashMap, fs, path::{Path, PathBuf}};
 
 use tini::Ini;
 
-mod execution;
-pub use self::execution::{PluginExecution, FieldEntry};
+pub mod execution;
+use execution::PluginExecution;
 
 use super::EntryTrait;
 
@@ -13,23 +13,6 @@ pub struct Plugin {
     pub comment: Option<String>,
     pub icon: Option<String>,
     pub exec: PathBuf,
-    pub kind: PluginKind
-}
-
-#[derive(Debug, Clone)]
-pub enum PluginKind {
-    Text, Json
-}
-
-impl FromStr for PluginKind {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "text" => Ok(Self::Text),
-            "json" => Ok(Self::Json),
-            _ => Err(())
-        }
-    }
 }
 
 impl Plugin {
@@ -42,8 +25,7 @@ impl Plugin {
             prefix: ini.remove("prefix")?,
             comment: ini.remove("comment"),
             icon: ini.remove("icon"),
-            exec: plugin_path.join(ini.remove("exec")?),
-            kind: ini.remove("type")?.parse().ok()?
+            exec: plugin_path.join(ini.remove("exec")?)
         })
     }
 

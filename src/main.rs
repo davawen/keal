@@ -1,7 +1,5 @@
 #![allow(non_snake_case)]
 
-// use dioxus_desktop::{Config, WindowBuilder};
-
 use iced::{Application, Settings, window, Font, font};
 
 mod search;

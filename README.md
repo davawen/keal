@@ -41,7 +41,7 @@ Concretely, here is how communication looks like:
 <- end
 -> enter
 -> 0
-<- fork
+<- action:fork
 (launches firefox)
 ```
 
@@ -52,32 +52,36 @@ A choice list expects `name:`s, with optional icons and comments, finished with 
   - `fork`: Closes the window, and continue the plugin as a separate process
       Use this if you wish to launch an application from the plugin
   - `wait_and_close`: Wait for the plugin to end before closing the window
-  - `change_input:<value>`: Change's the input field (including plugin prefix) to the string following the colon
+  - `change_input:<value>`: Change's the entire input field (including plugin prefix) to the string following the colon.
+      Note that the plugin should terminate after sending this action.
   - `change_query:<value>`: Same as `change_input`, but keeps plugin prefix
   - `update-all`: Replace the current choice list with a new one
   - `update:<index>`: Change a single choice. Give it as a one-element choice list (don't forget the `end`!)
+  - `none`: Do nothing
 - And you can subscribe to the following events:
   - `enter`: The user selected or clicked an option. Sends the index of the given choice
-  - `shift-enter`: Same, but with shift held
+  - `shift_enter`: Same, but with shift held
   - `query`: Query string changed. Sends the new query.
 
 And here is an exemple of a more interactive plugin:
 ```
-<- events:enter shift-enter query
+<- events:enter shift_enter query
 <- name:/
 <- name:~
 <- end
 -> query
 -> ~
-<- update-all
+<- action:update-all
 <- name:~/Documents
 <- name:~/Pictures
+<- end
 -> enter
 -> 1
-<- update-all
+<- action:update-all
 <- name:~/Pictures/Photos
--> shift-enter
+<- end
+-> shift_enter
 -> 0
-<- fork
+<- action:fork
 (Launches file explorer)
 ```

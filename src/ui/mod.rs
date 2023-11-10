@@ -1,10 +1,10 @@
-use std::{io::Write, process, os::unix::process::CommandExt};
+use std::{process, os::unix::process::CommandExt};
 
 use fork::{fork, Fork};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use iced::{Application, Theme, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, theme, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 
-use crate::{search::{self, plugin::{get_plugins, PluginExecution}, create_entries, EntryTrait, Entry}, icon::{IconCache, Icon}};
+use crate::{search::{self, plugin::{get_plugins, execution::{PluginExecution, PluginAction}, Plugin}, create_entries, EntryTrait, Entry}, icon::{IconCache, Icon}};
 
 mod styled;
 
@@ -55,6 +55,8 @@ impl Application for Keal {
     fn new(_: Self::Flags) -> (Self, iced::Command<Self::Message>) {
         let plugins = get_plugins();
         let entries = create_entries(&plugins);
+        // show the 50 first elements in the beginning
+        // TODO: fuzzel-like often launched applications
         let filtered = entries.iter().take(50).enumerate().map(|(i, _)| (i, 0)).collect();
         let icons = IconCache::new("hicolor");
 
@@ -162,7 +164,7 @@ impl Application for Keal {
         use keyboard::Event::KeyPressed;
         match message {
             Message::FontLoaded(_) => (),
-            Message::TextInput(input) => self.update_input(input),
+            Message::TextInput(input) => self.update_input(input, true),
             Message::Event(event) => match event {
                 KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
                 KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
@@ -176,47 +178,14 @@ impl Application for Keal {
                 _ => ()
             }
             Message::Launch(selected) => match &mut self.shown {
-                Shown::Plugin { execution, filtered } => match filtered.get(selected).map(|&(i, _)| &execution.entries[i]) {
-                    Some(Entry::FieldEntry(_)) => {
-                        let _ = writeln!(execution.stdin, "{}", filtered[selected].0);
-                        let action = execution.stdout.next().expect("no action given by plugin").unwrap();
-
-                        match action.as_str() {
-                            "fork" => match fork().expect("failed to fork") {
-                                Fork::Parent(_) => return iced::window::close(),
-                                Fork::Child => ()
-                            }
-                            "wait_and_close" => {
-                                let _ = execution.child.wait();
-                                return iced::window::close();
-                            }
-                            s if s.starts_with("change_input:") => {
-                                let s = s.strip_prefix("change_input:").unwrap();
-                                self.update_input(s.to_owned());
-                                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
-                            },
-                            s if s.starts_with("change_query:") => {
-                                let s = s.strip_prefix("change_query:").unwrap();
-                                let input = format!("{} {}", execution.prefix, s);
-                                self.update_input(input);
-                                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
-                            },
-                            _ => {
-                                eprintln!("unknown action: {action} given by plugin {}", execution.prefix);
-                                return iced::window::close();
-                            }
-                        }
-                        
-                    }
-                    None => (),
-                    Some(_) => unreachable!("something went terribly wrong")
-                }
                 Shown::Entries(filtered) => match &self.entries[filtered[selected].0] {
+                    // complete plugin prefix
                     Entry::PluginEntry(plugin) => {
                         let input = format!("{} ", plugin.name());
-                        self.update_input(input);
+                        self.update_input(input, true);
                         return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
                     }
+                    // launch application and close window
                     Entry::DesktopEntry(app) => {
                          // TODO: parse XDG desktop parameters
                         process::Command::new("sh") // ugly work around to avoir parsing spaces/quotes
@@ -228,6 +197,16 @@ impl Application for Keal {
                     }
                     _ => unreachable!("something went terribly wrong")
                 }
+                // send selected action to plugin
+                Shown::Plugin { execution, filtered } => if let Some(&(selected, _)) = filtered.get(selected) {
+                    if let Entry::FieldEntry(_) = &execution.entries[selected] {
+                        if let Some(action) = execution.send_enter(selected) {
+                            return self.handle_action(action);
+                        }
+                    } else {
+                        eprintln!("something went terribly wrong: non field entry in plugin entries");
+                    }
+                }
             }
         };
 
@@ -235,29 +214,38 @@ impl Application for Keal {
     }
 }
 
+impl Shown {
+    fn launch(&mut self, plugin: &Plugin) {
+        *self = Shown::Plugin { 
+            execution: plugin.generate(),
+            filtered: Vec::new() // filter happens right after
+        };
+    }
+}
+
 impl Keal {
-    fn update_input(&mut self, input: String) {
+
+    /// Changes the input field to a new value
+    /// `from_user` describes wether this change originates from user interaction
+    /// Or wether it comes from a plugin action, (and should therefore not be propagated as an event, to avoid cycles)
+    fn update_input(&mut self, input: String, from_user: bool) {
         self.input = input;
 
         // launch or stop plugin execution depending on new state of filter
         // if in plugin mode, remove plugin prefix from filter
         self.query = match (self.plugins.filter_starts_with_plugin(&self.input), &mut self.shown) {
             (Some((plugin, remainder)), Shown::Entries(_)) => { // launch plugin
-                self.shown = Shown::Plugin { 
-                    execution: plugin.generate(),
-                    filtered: Vec::new() // filter happens right after
-                };
+                self.shown.launch(plugin);
                 remainder.to_owned()
             }
-            (Some((plugin, remainer)), Shown::Plugin { execution, .. }) => {
+            (Some((plugin, remainder)), Shown::Plugin { execution, .. }) => {
                 // relaunch plugin if it is done executing or if we're currently executing the wrong plugin
                 if execution.child.try_wait().unwrap().is_some() || plugin.prefix != execution.prefix {
-                    self.shown = Shown::Plugin { 
-                        execution: plugin.generate(),
-                        filtered: Vec::new() // filter happens right after
-                    };
+                    self.shown.launch(plugin);
+                } else if from_user { // send query event
+                    execution.send_query(remainder);
                 }
-                remainer.to_owned()
+                remainder.to_owned()
             }
             (None, Shown::Plugin { .. }) => { // stop plugin
                 self.shown = Shown::Entries(Vec::new());
@@ -266,10 +254,55 @@ impl Keal {
             (None, Shown::Entries(_)) => self.input.clone()
         };
 
+        self.filter();
+    }
+
+    fn filter(&mut self) {
         match &mut self.shown {
             Shown::Entries(filtered) => *filtered = search::filter_entries(&self.matcher, &self.entries, &self.query, 50),
             Shown::Plugin { execution, filtered } =>
                 *filtered = search::filter_entries(&self.matcher, &execution.entries, &self.query, 50)
         }
+    }
+
+    /// panics if `self.shown` is not Shown::Plugin
+    fn handle_action(&mut self, action: PluginAction) -> Command<Message> {
+        let Shown::Plugin { execution, .. } = &mut self.shown else {
+            panic!("Trying to handle action on plugin that isn't loaded")
+        };
+
+        use PluginAction as Action;
+
+        match action {
+            Action::Fork => match fork().expect("failed to fork") {
+                Fork::Parent(_) => return iced::window::close(),
+                Fork::Child => ()
+            }
+            Action::WaitAndClose => {
+                let _ = execution.child.wait();
+                return iced::window::close();
+            }
+            Action::ChangeInput(new) => {
+                self.shown = Shown::Entries(Vec::new()); // kill running plugin
+                self.update_input(new, false);
+                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+            }
+            Action::ChangeQuery(new) => {
+                let new = format!("{} {}", execution.prefix, new);
+                self.update_input(new, false);
+                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+            }
+            Action::Update(idx, entry) => {
+                execution.entries[idx] = entry;
+                self.filter();
+            }
+            Action::UpdateAll(entries) => {
+                execution.entries = entries;
+                self.filter();
+            }
+            Action::None => ()
+        }
+
+        Command::none()
     }
 }

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use enum_dispatch::enum_dispatch;
 use fuzzy_matcher::FuzzyMatcher;
 
-use self::{match_span::MatchSpan, xdg::DesktopEntry, plugin::{PluginEntry, Plugins, FieldEntry}};
+use self::{match_span::MatchSpan, xdg::DesktopEntry, plugin::{PluginEntry, Plugins, execution::FieldEntry}};
 
 pub mod xdg;
 pub mod plugin;

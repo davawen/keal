@@ -1,6 +1,8 @@
-use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader}};
+use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write}};
 
-use crate::search::EntryTrait;
+use bitflags::bitflags;
+
+use crate::search::{EntryTrait, Entry};
 
 use super::Plugin;
 
@@ -12,8 +14,31 @@ pub struct PluginExecution {
     pub child: std::process::Child,
     pub stdin: ChildStdin,
     pub stdout: std::io::Lines<BufReader<ChildStdout>>,
-    pub entries: Vec<crate::search::Entry>
+    pub entries: Vec<Entry>,
+    events: PluginEvents
 }
+
+bitflags! {
+    #[derive(Debug)]
+    struct PluginEvents: u8 {
+        const None = 0;
+        const Enter = 0b1;
+        const ShiftEnter = 0b10;
+        const Query = 0b100;
+    }
+}
+
+pub enum PluginAction {
+    Fork,
+    WaitAndClose,
+    ChangeInput(String),
+    ChangeQuery(String),
+    UpdateAll(Vec<Entry>),
+    Update(usize, Entry),
+    None
+}
+
+// TODO: Better error handling for plugins: instead of panicking or logging to stderr, show feedback in window
 
 impl PluginExecution {
     pub fn new(plugin: &Plugin) -> Self {
@@ -27,45 +52,116 @@ impl PluginExecution {
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let mut stdout = BufReader::new(stdout).lines();
+        let stdout = BufReader::new(stdout).lines();
 
+        let mut this = Self {
+            prefix: plugin.prefix.clone(),
+            child, stdin, stdout,
+            entries: vec![],
+            events: PluginEvents::None
+        };
+
+        this.get_events();
+        this.entries = this.get_choice_list();
+
+        this
+    }
+
+    fn get_events(&mut self) {
+        let line = self.stdout.next().unwrap().unwrap();
+
+        match line.split_once(':') {
+            Some(("events", events)) => for event in events.split(' ') {
+                match event {
+                    "enter" => self.events |= PluginEvents::Enter,
+                    "shift-enter" => self.events |= PluginEvents::ShiftEnter,
+                    "query" => self.events |= PluginEvents::Query,
+                    event => panic!("unknown event `{event}`")
+                }
+            }
+            _ => panic!("expected subscribed events, got `{line}`") // Perhaps we can assume enter?
+        }
+    }
+
+    /// Send `query` event to plugin
+    pub fn send_query(&mut self, query: &str) -> Option<PluginAction> {
+        if !self.events.intersects(PluginEvents::Query) { return None }
+
+        writeln!(self.stdin, "query\n{query}").unwrap();
+        Some(self.get_action())
+    }
+
+    /// Send `enter` event to plugin
+    /// Expects `idx` to be valid
+    pub fn send_enter(&mut self, idx: usize) -> Option<PluginAction> {
+        if !self.events.intersects(PluginEvents::Enter) { return None }
+
+        writeln!(self.stdin, "enter\n{idx}").unwrap();
+        Some(self.get_action())
+    }
+
+    fn get_action(&mut self) -> PluginAction {
+        let line = self.stdout.next().unwrap().unwrap();
+
+        match line.split_once(':') {
+            Some(("action", action)) => match action.split_once(':') {
+                Some(("change_input", value)) => PluginAction::ChangeInput(value.to_owned()),
+                Some(("change_query", value)) => PluginAction::ChangeQuery(value.to_owned()),
+                Some(("update", index)) => PluginAction::Update(
+                    index.parse().unwrap(),
+                    self.get_choice_list().pop().expect("one element for update action")
+                ),
+                _ => match action {
+                    "fork" => PluginAction::Fork,
+                    "wait_and_close" => PluginAction::WaitAndClose,
+                    "update-all" => PluginAction::UpdateAll(self.get_choice_list()),
+                    "none" => PluginAction::None,
+                    action => panic!("unknown action `{action}`")
+                }
+            }
+            _ => panic!("expected action, got `{line}`")
+        }
+    }
+
+    fn get_choice_list(&mut self) -> Vec<Entry> {
         let mut entries = vec![];
         let mut current: Option<FieldEntry> = None;
 
         // Read initial entries line by line
-        for line in stdout.by_ref() {
+        for line in self.stdout.by_ref() {
             let Ok(line) = line else { continue };
 
-            if let Some(line) = line.strip_prefix("name:") {
-                if let Some(old) = current.take() {
-                    entries.push(old.into());
-                }
+            match line.split_once(':') {
+                Some(line) => match (&mut current, line) {
+                    (current, ("name", name)) => {
+                        if let Some(old) = current.take() {
+                            entries.push(old.into());
+                        }
 
-                current = Some(FieldEntry {
-                    field: line.to_owned(),
-                    icon: None,
-                    comment: None
-                });
-            } else if let (Some(current), Some(line)) = (&mut current, line.strip_prefix("icon:")) {
-                current.icon = Some(line.to_owned());
-            } else if let (Some(current), Some(line)) = (&mut current, line.strip_prefix("comment:")) {
-                current.comment = Some(line.to_owned());
-            } else if line == "end" {
-                if let Some(old) = current.take() {
-                    entries.push(old.into());
+                        *current = Some(FieldEntry {
+                            field: name.to_owned(),
+                            icon: None,
+                            comment: None
+                        });
+                    }
+                    (Some(current), ("icon", icon)) => current.icon = Some(icon.to_owned()),
+                    (Some(current), ("comment", comment)) => current.comment = Some(comment.to_owned()),
+                    (None, ("icon" | "comment", _)) => eprintln!("using a modifier descriptor before setting a field in plugin `{}`", self.prefix),
+                    (_, (descriptor, _)) => eprintln!("unknown descriptor `{descriptor}` in plugin `{}`", self.prefix)
+                },
+                None => match line.as_str() {
+                    "end" => {
+                        if let Some(old) = current.take() {
+                            entries.push(old.into());
+                        }
+                        break
+                    }
+                    line => eprintln!("expected choice or `end`, got `{line}`.")
                 }
-                break
-            } else if line.starts_with("icon:") || line.starts_with("comment:") {
-                eprintln!("using a modifier descriptor before setting a field in plugin `{}`", plugin.prefix);
-            } else {
-                eprintln!("unknown descriptor `{line}` in plugin `{}`", plugin.prefix)
             }
         }
 
-        Self {
-            prefix: plugin.prefix.clone(),
-            child, stdin, stdout, entries
-        }
+        entries
     }
 }
 
