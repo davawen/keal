@@ -3,9 +3,17 @@
 A fast application launcher, that works under wayland, with the convenience and extensibility of ULauncher, but without the cruft or the bugs.  
 (or at least, that's my goals ^^')
 
-## Config
+## Features
 
-TODO: configuration
+- [x] Search installed applications and desktop files 
+- [ ] Configuration (font, style/colors, icon theme, plugin overrides)
+- [ ] Custom aliases
+- [ ] Frequently launched applications/plugins
+- [ ] Dmenu mode (with rofi extended protocol)
+- [x] Custom plugins 
+- [ ] Built-in plugins (session, list installed plugins, ...) 
+- [ ] Plugin error feedback instead of panicking
+- [ ] Plugin database
 
 ## Plugins
 
