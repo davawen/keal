@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use enum_dispatch::enum_dispatch;
 use fuzzy_matcher::FuzzyMatcher;
 
+use crate::icon::IconPath;
+
 use self::{match_span::MatchSpan, xdg::DesktopEntry, plugin::{PluginEntry, Plugins, execution::FieldEntry}};
 
 pub mod xdg;
@@ -13,7 +15,7 @@ mod match_span;
 pub trait EntryTrait {
     fn name(&self) -> &str;
     fn comment(&self) -> Option<&str>;
-    fn icon(&self) -> Option<&str>;
+    fn icon(&self) -> Option<&IconPath>;
     /// what should be used to match the entry
     fn to_match(&self) -> &str;
 

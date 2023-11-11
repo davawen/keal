@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::{PathBuf, Path}};
 
 use tini::Ini;
 use walkdir::WalkDir;
+
+use crate::icon::IconPath;
 
 use super::EntryTrait;
 
@@ -13,7 +15,7 @@ pub struct DesktopEntry {
     /// concatenation of name, generic name, categories and comment
     to_match: String,
     pub exec: String,
-    pub icon: Option<String>
+    pub icon: Option<IconPath>
 }
 
 impl DesktopEntry {
@@ -31,7 +33,7 @@ impl DesktopEntry {
             comment.as_deref().unwrap_or(""),
         );
         let exec = ini.remove("Exec")?;
-        let icon = ini.remove("Icon");
+        let icon = ini.remove("Icon").map(IconPath::from);
 
         Some(DesktopEntry {
             name, comment, to_match,
@@ -43,20 +45,24 @@ impl DesktopEntry {
 impl EntryTrait for DesktopEntry {
     fn name(&self) ->  &str { &self.name }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
-    fn icon(&self) -> Option<&str> { self.icon.as_deref() }
+    fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn to_match(&self) ->  &str { &self.to_match }
 }
 
-pub fn xdg_directories(dir: &str) -> Vec<String> {
+pub fn xdg_directories<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     let mut data_dirs: Vec<_> = std::env::var("XDG_DATA_DIRS")
-        .map(|dirs| dirs.split(':').map(str::to_owned).collect())
+        .map(|dirs| dirs.split(':').map(PathBuf::from).collect())
         .unwrap_or_default();
 
-    if let Ok(home) = std::env::var("HOME") {
-        data_dirs.push(format!("{home}/.local/share"));
+    if let Ok(home) = std::env::var("XDG_DATA_HOME") {
+        data_dirs.push(home.into());
     }
 
-    data_dirs.into_iter().map(|path| format!("{path}/{dir}")).collect()
+    for path in &mut data_dirs {
+        path.push(&dir);
+    }
+
+    data_dirs
 }
 
 /// Returns the list of all applications on the system

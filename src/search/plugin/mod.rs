@@ -5,13 +5,15 @@ use tini::Ini;
 pub mod execution;
 use execution::PluginExecution;
 
+use crate::icon::IconPath;
+
 use super::EntryTrait;
 
 #[derive(Debug, Clone)]
 pub struct Plugin {
     pub prefix: String,
     pub comment: Option<String>,
-    pub icon: Option<String>,
+    pub icon: Option<IconPath>,
     pub exec: PathBuf,
 }
 
@@ -24,7 +26,7 @@ impl Plugin {
         Some(Self {
             prefix: ini.remove("prefix")?,
             comment: ini.remove("comment"),
-            icon: ini.remove("icon"),
+            icon: ini.remove("icon").map(IconPath::from),
             exec: plugin_path.join(ini.remove("exec")?)
         })
     }
@@ -38,13 +40,13 @@ impl Plugin {
 pub struct PluginEntry {
     prefix: String,
     comment: Option<String>,
-    icon: Option<String>
+    icon: Option<IconPath>
 }
 
 impl EntryTrait for PluginEntry {
     fn name(&self) ->  &str { &self.prefix }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
-    fn icon(&self) -> Option<&str> { self.icon.as_deref() }
+    fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn to_match(&self) ->  &str { &self.prefix }
 }
 

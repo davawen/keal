@@ -2,7 +2,7 @@ use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write}};
 
 use bitflags::bitflags;
 
-use crate::search::{EntryTrait, Entry};
+use crate::{search::{EntryTrait, Entry}, icon::IconPath};
 
 use super::Plugin;
 
@@ -144,7 +144,7 @@ impl PluginExecution {
                             comment: None
                         });
                     }
-                    (Some(current), ("icon", icon)) => current.icon = Some(icon.to_owned()),
+                    (Some(current), ("icon", icon)) => current.icon = Some(icon.to_owned().into()),
                     (Some(current), ("comment", comment)) => current.comment = Some(comment.to_owned()),
                     (None, ("icon" | "comment", _)) => eprintln!("using a modifier descriptor before setting a field in plugin `{}`", self.prefix),
                     (_, (descriptor, _)) => eprintln!("unknown descriptor `{descriptor}` in plugin `{}`", self.prefix)
@@ -180,12 +180,12 @@ impl Drop for PluginExecution {
 pub struct FieldEntry {
     field: String,
     comment: Option<String>,
-    icon: Option<String>
+    icon: Option<IconPath>
 }
 
 impl EntryTrait for FieldEntry {
     fn name(&self) ->  &str { &self.field }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
-    fn icon(&self) -> Option<&str> { self.icon.as_deref() }
+    fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn to_match(&self) ->  &str { &self.field }
 }

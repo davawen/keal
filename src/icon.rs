@@ -1,17 +1,34 @@
-use std::{collections::HashMap, path::PathBuf, ffi::OsStr};
+use std::{collections::HashMap, path::{PathBuf, Path}};
 
 use walkdir::WalkDir;
 
 use crate::search::xdg::xdg_directories;
 
+/// Distinguishes between a direct path to an icon, and an icon identifier that needs to be searched in IconCache.
+#[derive(Debug, Clone)]
+pub enum IconPath {
+    Name(String),
+    Path(Icon)
+}
+
 /// Links an icon name to its path
 #[derive(Debug, Default)]
 pub struct IconCache(HashMap<String, Icon>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Icon {
     Svg(PathBuf),
     Other(PathBuf)
+}
+
+impl From<String> for IconPath {
+    fn from(value: String) -> Self {
+        if Path::new(&value).is_absolute() {
+            IconPath::Path(PathBuf::from(value).into())
+        } else {
+            IconPath::Name(value)
+        }
+    }
 }
 
 impl From<PathBuf> for Icon {
@@ -28,19 +45,17 @@ impl IconCache {
     pub fn new(icon_theme: &str) -> Self {
         let mut icon_dirs = xdg_directories("icons");
         for dir in &mut icon_dirs {
-            dir.push('/');
-            dir.push_str(icon_theme)
+            dir.push(icon_theme);
         }
-
-        icon_dirs.push("/usr/share/pixmaps".to_owned());
+        icon_dirs.push("/usr/share/pixmaps".into());
 
         let mut cache = Self::default();
 
         for dir in icon_dirs {
-            for file in WalkDir::new(&dir).into_iter().flatten() {
+            for file in WalkDir::new(&dir).follow_links(true).into_iter().flatten() {
                 if !file.metadata().unwrap().is_file() { continue }
 
-                let Some(Some(name)) = file.path().file_stem().map(OsStr::to_str) else { continue }; // filter non utf-8 names
+                let Some(Some(name)) = file.path().file_stem().map(|x| x.to_str()) else { continue }; // filter non utf-8 names
                 if cache.0.contains_key(name) { continue } // filter already found icons
 
                 cache.0.insert(name.to_owned(), file.into_path().into());
@@ -50,7 +65,10 @@ impl IconCache {
         cache
     }
 
-    pub fn get(&self, icon: &str) -> Option<&Icon> {
-        self.0.get(icon)
+    pub fn get<'a>(&'a self, icon: &'a IconPath) -> Option<&'a Icon> {
+        match icon {
+            IconPath::Name(icon) => self.0.get(icon),
+            IconPath::Path(icon) => Some(icon)
+        }
     }
 }

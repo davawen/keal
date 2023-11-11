@@ -167,6 +167,7 @@ impl Application for Keal {
             Message::TextInput(input) => self.update_input(input, true),
             Message::Event(event) => match event {
                 KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
+                // TODO: gently scroll window to selected choice
                 KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
                     self.selected += 1;
                     self.selected = self.selected.min(self.shown.filtered().len().saturating_sub(1));
