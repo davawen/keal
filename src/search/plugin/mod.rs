@@ -11,9 +11,10 @@ use super::EntryTrait;
 
 #[derive(Debug, Clone)]
 pub struct Plugin {
-    pub prefix: String,
-    pub comment: Option<String>,
+    pub name: String,
     pub icon: Option<IconPath>,
+    pub comment: Option<String>,
+    pub prefix: String,
     pub exec: PathBuf,
 }
 
@@ -24,9 +25,10 @@ impl Plugin {
             .collect();
 
         Some(Self {
-            prefix: ini.remove("prefix")?,
-            comment: ini.remove("comment"),
+            name: ini.remove("name")?,
             icon: ini.remove("icon").map(IconPath::from),
+            comment: ini.remove("comment"),
+            prefix: ini.remove("prefix")?,
             exec: plugin_path.join(ini.remove("exec")?)
         })
     }
@@ -39,13 +41,13 @@ impl Plugin {
 #[derive(Debug)]
 pub struct PluginEntry {
     prefix: String,
-    comment: Option<String>,
+    comment: String,
     icon: Option<IconPath>
 }
 
 impl EntryTrait for PluginEntry {
     fn name(&self) ->  &str { &self.prefix }
-    fn comment(&self) -> Option<&str> { self.comment.as_deref() }
+    fn comment(&self) -> Option<&str> { Some(&self.comment) }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn to_match(&self) ->  &str { &self.prefix }
 }
@@ -82,7 +84,15 @@ pub fn get_plugins() -> Plugins {
         .map(|plugin| (plugin.prefix.clone(), plugin))
         .collect())
 }
+
 pub fn plugin_entries(plugins: &Plugins) -> impl Iterator<Item = PluginEntry> + '_ {
     plugins.0.values()
-        .map(|plugin| PluginEntry { prefix: plugin.prefix.clone(), comment: plugin.comment.clone(), icon: plugin.icon.clone() })
+        .map(|plugin| PluginEntry {
+            prefix: plugin.prefix.clone(),
+            icon: plugin.icon.clone(),
+            comment: format!("{}{}", plugin.name, plugin.comment.as_ref()
+                .map(|s| format!(" ({s})"))
+                .unwrap_or_default()
+            )
+        })
 }

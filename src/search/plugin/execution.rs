@@ -39,6 +39,7 @@ pub enum PluginAction {
 }
 
 // TODO: Better error handling for plugins: instead of panicking or logging to stderr, show feedback in window
+// TODO: Asynchronous/Non blocking plugins
 
 impl PluginExecution {
     pub fn new(plugin: &Plugin) -> Self {

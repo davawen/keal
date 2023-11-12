@@ -21,9 +21,10 @@ Plugins are placed in `~/.config/keal/plugins/<name>`.
 Characteristics are described in a `config.ini` file:
 ```ini
 [plugin]
-prefix = sm ; What the user needs to type
-comment = Manage current session ; (optional) Comment shown on the right
+name = Session Manager
 icon = user ; (optional) Plugin icon
+comment = Manage current session ; (optional) Comment shown on the right
+prefix = sm ; What the user needs to type
 exec = exec.sh ; Executable, from the plugin's directory
 ```
 
