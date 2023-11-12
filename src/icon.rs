@@ -21,10 +21,12 @@ pub enum Icon {
     Other(PathBuf)
 }
 
-impl From<String> for IconPath {
-    fn from(value: String) -> Self {
+impl IconPath {
+    pub fn new(value: String, cwd: Option<&Path>) -> Self {
         if Path::new(&value).is_absolute() {
             IconPath::Path(PathBuf::from(value).into())
+        } else if Path::new(&value).starts_with("./") && cwd.is_some() {
+            IconPath::Path(cwd.unwrap().join(value).into())
         } else {
             IconPath::Name(value)
         }

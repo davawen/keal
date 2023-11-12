@@ -33,7 +33,7 @@ impl DesktopEntry {
             comment.as_deref().unwrap_or(""),
         );
         let exec = ini.remove("Exec")?;
-        let icon = ini.remove("Icon").map(IconPath::from);
+        let icon = ini.remove("Icon").map(|i| IconPath::new(i, None));
 
         Some(DesktopEntry {
             name, comment, to_match,

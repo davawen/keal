@@ -1,4 +1,4 @@
-use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write}};
+use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write}, path::PathBuf};
 
 use bitflags::bitflags;
 
@@ -11,11 +11,12 @@ use super::Plugin;
 #[derive(Debug)]
 pub struct PluginExecution {
     pub prefix: String,
-    pub child: std::process::Child,
-    pub stdin: ChildStdin,
-    pub stdout: std::io::Lines<BufReader<ChildStdout>>,
     pub entries: Vec<Entry>,
-    events: PluginEvents
+    pub child: std::process::Child,
+    stdin: ChildStdin,
+    stdout: std::io::Lines<BufReader<ChildStdout>>,
+    events: PluginEvents,
+    cwd: PathBuf
 }
 
 bitflags! {
@@ -45,10 +46,11 @@ impl PluginExecution {
     pub fn new(plugin: &Plugin) -> Self {
         use std::process::{Stdio, Command};
 
+        let cwd = plugin.exec.parent().unwrap().to_path_buf();
         let mut child = Command::new(&plugin.exec)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .current_dir(plugin.exec.parent().unwrap())
+            .current_dir(&cwd)
             .spawn().expect("Couldn't spawn process from plugin");
 
         let stdin = child.stdin.take().unwrap();
@@ -59,7 +61,8 @@ impl PluginExecution {
             prefix: plugin.prefix.clone(),
             child, stdin, stdout,
             entries: vec![],
-            events: PluginEvents::None
+            events: PluginEvents::None,
+            cwd
         };
 
         this.get_events();
@@ -145,7 +148,7 @@ impl PluginExecution {
                             comment: None
                         });
                     }
-                    (Some(current), ("icon", icon)) => current.icon = Some(icon.to_owned().into()),
+                    (Some(current), ("icon", icon)) => current.icon = Some(IconPath::new(icon.to_owned(), Some(&self.cwd))),
                     (Some(current), ("comment", comment)) => current.comment = Some(comment.to_owned()),
                     (None, ("icon" | "comment", _)) => eprintln!("using a modifier descriptor before setting a field in plugin `{}`", self.prefix),
                     (_, (descriptor, _)) => eprintln!("unknown descriptor `{descriptor}` in plugin `{}`", self.prefix)

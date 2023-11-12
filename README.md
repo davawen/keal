@@ -22,10 +22,12 @@ Characteristics are described in a `config.ini` file:
 ```ini
 [plugin]
 name = Session Manager
-icon = user ; (optional) Plugin icon
-comment = Manage current session ; (optional) Comment shown on the right
-prefix = sm ; What the user needs to type
-exec = exec.sh ; Executable, from the plugin's directory
+icon = user # (optional) Plugin icon
+  # An icon can be the name of one in the icon theme, an absolute path, or a relative path (by starting with "./")
+  # Note that this works for plugin icons and for choice icons
+comment = Manage current session # (optional) Comment shown on the right
+prefix = sm # What the user needs to type
+exec = exec.sh # Executable, from the plugin's directory
 ```
 
 Plugins communicate via `stdio`, as to be as simple and universal as possible.  

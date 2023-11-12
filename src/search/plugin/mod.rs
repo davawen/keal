@@ -26,7 +26,7 @@ impl Plugin {
 
         Some(Self {
             name: ini.remove("name")?,
-            icon: ini.remove("icon").map(IconPath::from),
+            icon: ini.remove("icon").map(|i| IconPath::new(i, Some(plugin_path))),
             comment: ini.remove("comment"),
             prefix: ini.remove("prefix")?,
             exec: plugin_path.join(ini.remove("exec")?)
