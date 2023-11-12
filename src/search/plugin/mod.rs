@@ -66,13 +66,17 @@ impl Plugins {
 }
 
 pub fn get_plugins() -> Plugins {
-    let Ok(config) = std::env::var("XDG_CONFIG_HOME") else {
-        eprintln!("$XDG_CONFIG_HOME is not configured. Didn't load any plugin.");
+    let mut config = if let Some(config) = std::env::var_os("XDG_CONFIG_HOME") {
+        PathBuf::from(config)
+    } else if let Some(home) = std::env::var_os("HOME") {
+        Path::new(&home).join(".config")
+    } else {
+        eprintln!("neither $XDG_CONFIG_HOME nor $HOME are enabled. Didn't load any plugin.");
         return Plugins::default()
     };
 
-    let path = format!("{config}/keal/plugins");
-    let Ok(plugins) = fs::read_dir(path) else { return Plugins::default() };
+    config.push("keal/plugins");
+    let Ok(plugins) = fs::read_dir(config) else { return Plugins::default() };
 
     Plugins(plugins
         .flatten()
