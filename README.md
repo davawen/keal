@@ -6,7 +6,8 @@ A fast application launcher, that works under wayland, with the convenience and 
 ## Features
 
 - [x] Search installed applications and desktop files 
-- [ ] Configuration (font, style/colors, icon theme, plugin overrides)
+- [x] Configuration (font, style/colors, icon theme)
+  - [ ] Plugin overrides
 - [ ] Custom aliases
 - [ ] Frequently launched applications/plugins
 - [ ] Dmenu mode (with rofi extended protocol)
@@ -15,9 +16,20 @@ A fast application launcher, that works under wayland, with the convenience and 
 - [ ] Plugin error feedback instead of panicking
 - [ ] Plugin database
 
+## Configuration
+Keal is configured in `~/.config/keal/config.ini`.
+```ini
+# default values
+[keal]
+font = Iosevka
+font_size = 16.0
+font_weight = medium
+icon_theme = hicolor
+```
+
 ## Plugins
 
-Plugins are placed in `~/.config/keal/plugins/<name>`.
+Plugins are placed in `~/.config/keal/plugins/`.
 Characteristics are described in a `config.ini` file:
 ```ini
 [plugin]

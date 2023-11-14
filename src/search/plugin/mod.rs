@@ -7,7 +7,7 @@ use execution::PluginExecution;
 
 use crate::icon::IconPath;
 
-use super::EntryTrait;
+use super::{EntryTrait, xdg::config_dir};
 
 #[derive(Debug, Clone)]
 pub struct Plugin {
@@ -66,16 +66,9 @@ impl Plugins {
 }
 
 pub fn get_plugins() -> Plugins {
-    let mut config = if let Some(config) = std::env::var_os("XDG_CONFIG_HOME") {
-        PathBuf::from(config)
-    } else if let Some(home) = std::env::var_os("HOME") {
-        Path::new(&home).join(".config")
-    } else {
-        eprintln!("neither $XDG_CONFIG_HOME nor $HOME are enabled. Didn't load any plugin.");
-        return Plugins::default()
-    };
+    let Ok(mut config) = config_dir() else { return Plugins::default() };
+    config.push("plugins");
 
-    config.push("keal/plugins");
     let Ok(plugins) = fs::read_dir(config) else { return Plugins::default() };
 
     Plugins(plugins

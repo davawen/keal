@@ -5,8 +5,11 @@ use iced::{Application, Settings, window, Font, font};
 mod search;
 mod ui;
 mod icon;
+mod config;
 
 fn main() -> iced::Result {
+    let config = config::load_config();
+
     ui::Keal::run(Settings {
         window: window::Settings {
             size: (1920/3, 1080/2),
@@ -18,11 +21,12 @@ fn main() -> iced::Result {
             ..Default::default()
         },
         default_font: Font {
-            family: font::Family::Name("Iosevka"),
-            weight: font::Weight::Medium,
-            stretch: font::Stretch::Normal,
-            monospaced: true
+            family: font::Family::Name(config.font.clone().leak()),
+            weight: config.font_weight,
+            stretch: config.font_stretch,
+            ..Default::default()
         },
+        flags: config,
         ..Default::default()
     })
 }

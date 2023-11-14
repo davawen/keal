@@ -65,6 +65,20 @@ pub fn xdg_directories<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     data_dirs
 }
 
+/// Returns the path equivalent to `~/.config/keal`
+pub fn config_dir() -> Result<PathBuf, &'static str> {
+    let mut dir = if let Some(config) = std::env::var_os("XDG_CONFIG_HOME") {
+        PathBuf::from(config)
+    } else if let Some(home) = std::env::var_os("HOME") {
+        Path::new(&home).join(".config")
+    } else {
+        return Err("neither $XDG_CONFIG_HOME nor $HOME are enabled. Didn't load any plugin.");
+    };
+    dir.push("keal");
+
+    Ok(dir)
+}
+
 /// Returns the list of all applications on the system
 /// Uses `collisions` to avoid putting the same application twice in the list
 pub fn desktop_entries() -> impl Iterator<Item = DesktopEntry> {
