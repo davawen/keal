@@ -162,7 +162,7 @@ impl Application for Keal {
         use keyboard::Event::KeyPressed;
         match message {
             Message::FontLoaded(_) => (),
-            Message::TextInput(input) => self.update_input(input, true),
+            Message::TextInput(input) => return self.update_input(input, true),
             Message::Event(event) => match event {
                 KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
                 // TODO: gently scroll window to selected choice
@@ -181,8 +181,8 @@ impl Application for Keal {
                     // complete plugin prefix
                     Entry::PluginEntry(plugin) => {
                         let input = format!("{} ", plugin.name());
-                        self.update_input(input, true);
-                        return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+                        let c = self.update_input(input, true);
+                        return Command::batch([c, text_input::move_cursor_to_end(text_input::Id::new("query_input"))]);
                     }
                     // launch application and close window
                     Entry::DesktopEntry(app) => {
@@ -227,8 +227,10 @@ impl Keal {
     /// Changes the input field to a new value
     /// `from_user` describes wether this change originates from user interaction
     /// Or wether it comes from a plugin action, (and should therefore not be propagated as an event, to avoid cycles)
-    fn update_input(&mut self, input: String, from_user: bool) {
+    fn update_input(&mut self, input: String, from_user: bool) -> Command<Message> {
         self.input = input;
+
+        let mut command = Command::none();
 
         // launch or stop plugin execution depending on new state of filter
         // if in plugin mode, remove plugin prefix from filter
@@ -239,12 +241,15 @@ impl Keal {
             }
             (Some((plugin, remainder)), Shown::Plugin { execution, .. }) => {
                 // relaunch plugin if it is done executing or if we're currently executing the wrong plugin
+                let remainder = remainder.to_owned();
                 if execution.child.try_wait().unwrap().is_some() || plugin.prefix != execution.prefix {
                     self.shown.launch(plugin);
                 } else if from_user { // send query event
-                    execution.send_query(remainder);
+                    if let Some(action) = execution.send_query(&remainder) {
+                        command = self.handle_action(action);
+                    };
                 }
-                remainder.to_owned()
+                remainder
             }
             (None, Shown::Plugin { .. }) => { // stop plugin
                 self.shown = Shown::Entries(Vec::new());
@@ -254,6 +259,7 @@ impl Keal {
         };
 
         self.filter();
+        command
     }
 
     fn filter(&mut self) {
@@ -283,13 +289,13 @@ impl Keal {
             }
             Action::ChangeInput(new) => {
                 self.shown = Shown::Entries(Vec::new()); // kill running plugin
-                self.update_input(new, false);
-                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+                let c = self.update_input(new, false);
+                return Command::batch([c, text_input::move_cursor_to_end(text_input::Id::new("query_input"))]);
             }
             Action::ChangeQuery(new) => {
                 let new = format!("{} {}", execution.prefix, new);
-                self.update_input(new, false);
-                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
+                let c = self.update_input(new, false);
+                return Command::batch([c, text_input::move_cursor_to_end(text_input::Id::new("query_input"))]);
             }
             Action::Update(idx, entry) => {
                 execution.entries[idx] = entry;

@@ -29,6 +29,7 @@ bitflags! {
     }
 }
 
+#[must_use]
 pub enum PluginAction {
     Fork,
     WaitAndClose,
