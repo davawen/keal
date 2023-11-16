@@ -25,15 +25,15 @@ macro_rules! color {
     };
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct Theme {
-    pub text: Color,
     pub background: Color,
 
     pub input_placeholder: Color,
     pub input_selection: Color,
     pub input_background: Color,
 
+    pub text: Color,
     pub matched_text: Color,
     pub selected_matched_text: Color,
     pub comment: Color,
@@ -47,6 +47,29 @@ pub struct Theme {
     pub scrollbar: Color,
     pub hovered_scrollbar: Color,
     pub scrollbar_border_radius: f32
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self {
+            background: color!(0x24273a),
+            input_placeholder: color!(0xa5adcb),
+            input_selection: color!(0xb4d5ff, 0.2),
+            input_background: color!(0x363a4f),
+            text: color!(0xcad3f5),
+            matched_text: color!(0xa6da95),
+            selected_matched_text: color!(0xeed49f),
+            comment: color!(0xa5adcb),
+            choice_background: color!(0x24273a),
+            selected_choice_background: color!(0x494d64),
+            hovered_choice_background: color!(0x363a4f),
+            pressed_choice_background: color!(0x181926),
+            scrollbar_enabled: true,
+            scrollbar: color!(0x5b6078),
+            hovered_scrollbar: color!(0x6e738d),
+            scrollbar_border_radius: 2.0
+        }
+    }
 }
 
 impl application::StyleSheet for Theme {

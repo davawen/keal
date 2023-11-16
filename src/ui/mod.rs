@@ -2,11 +2,12 @@ use std::{process, os::unix::process::CommandExt};
 
 use fork::{fork, Fork};
 use fuzzy_matcher::skim::SkimMatcherV2;
-use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
+use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 
 use crate::{search::{self, plugin::{get_plugins, execution::{PluginExecution, PluginAction}, Plugin}, create_entries, EntryTrait, Entry}, icon::{IconCache, Icon}, config::Config};
 
-use self::styled::{Theme, ButtonStyle, TextStyle};
+pub use styled::Theme;
+use styled::{ButtonStyle, TextStyle};
 
 mod styled;
 
@@ -93,28 +94,11 @@ impl Application for Keal {
     }
 
     fn theme(&self) -> Self::Theme {
-        Theme {
-            text: color!(0xcad3f5),
-            background: color!(0x24273a),
-            input_placeholder: color!(0xa5adcb),
-            input_selection: color!(0xb4d5ff, 0.2),
-            input_background: color!(0x363a4f),
-            matched_text: color!(0xa6da95),
-            selected_matched_text: color!(0xeed49f),
-            comment: color!(0xa5adcb),
-            choice_background: color!(0x24273a),
-            selected_choice_background: color!(0x494d64),
-            hovered_choice_background: color!(0x363a4f),
-            pressed_choice_background: color!(0x181926),
-            scrollbar_enabled: true,
-            scrollbar: color!(0x5b6078),
-            hovered_scrollbar: color!(0x6e738d),
-            scrollbar_border_radius: 2.0
-        }
+        self.config.theme.clone() // unfortunate clone, not sure how to get rid of this
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
-        let input = text_input("search your dreams!", &self.input)
+        let input = text_input(&self.config.placeholder_text, &self.input)
             .on_input(Message::TextInput)
             .on_submit(Message::Launch(self.selected))
             .size(self.config.font_size * 1.25).padding(self.config.font_size)
