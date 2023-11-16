@@ -27,7 +27,26 @@ macro_rules! color {
 
 #[derive(Default)]
 pub struct Theme {
-    pub text_color: Color
+    pub text: Color,
+    pub background: Color,
+
+    pub input_placeholder: Color,
+    pub input_selection: Color,
+    pub input_background: Color,
+
+    pub matched_text: Color,
+    pub selected_matched_text: Color,
+    pub comment: Color,
+
+    pub choice_background: Color,
+    pub selected_choice_background: Color,
+    pub hovered_choice_background: Color,
+    pub pressed_choice_background: Color,
+
+    pub scrollbar_enabled: bool,
+    pub scrollbar: Color,
+    pub hovered_scrollbar: Color,
+    pub scrollbar_border_radius: f32
 }
 
 impl application::StyleSheet for Theme {
@@ -35,21 +54,32 @@ impl application::StyleSheet for Theme {
 
     fn appearance(&self, _: &Self::Style) -> application::Appearance {
         application::Appearance {
-            text_color: self.text_color,
-            background_color: color!(0x24273a) 
+            text_color: self.text,
+            background_color: self.background 
         }
     }
 }
 
-pub const MATCHED_TEXT_COLOR: Color = color!(0xa6da95);
-pub const SELECTED_MATCHED_TEXT_COLOR: Color = color!(0xeed49f);
-pub const COMMENT_COLOR: Color = color!(0xa5adcb);
+#[derive(Default, Clone)]
+pub enum TextStyle {
+    #[default]
+    Normal,
+    Matched {
+        selected: bool
+    },
+    Comment
+}
 
 impl text::StyleSheet for Theme {
-    type Style = Option<Color>;
+    type Style = TextStyle;
     fn appearance(&self, style: Self::Style) -> text::Appearance {
         text::Appearance { 
-            color: Some(style.unwrap_or(self.text_color))
+            color: Some(match style {
+                TextStyle::Normal => self.text,
+                TextStyle::Matched { selected: false } => self.matched_text,
+                TextStyle::Matched { selected: true } => self.selected_matched_text,
+                TextStyle::Comment => self.comment
+            })
         }
     }
 }
@@ -59,7 +89,7 @@ impl text_input::StyleSheet for Theme {
 
     fn active(&self, _: &Self::Style) -> text_input::Appearance {
         text_input::Appearance {
-            background: color!(0x363a4f).into(),
+            background: self.input_background.into(),
             border_radius: [5.0, 5.0, 0.0, 0.0].into(),
             icon_color: Color::TRANSPARENT, border_width: 0.0, border_color: Color::TRANSPARENT
         }
@@ -68,45 +98,45 @@ impl text_input::StyleSheet for Theme {
     fn focused(&self, style: &Self::Style) -> text_input::Appearance { self.active(style) }
     fn disabled(&self, style: &Self::Style) -> text_input::Appearance { self.active(style) }
 
-    fn placeholder_color(&self, _: &Self::Style) -> Color { color!(0xa5adcb) }
-    fn value_color(&self, _: &Self::Style) -> Color { self.text_color }
+    fn placeholder_color(&self, _: &Self::Style) -> Color { self.input_placeholder }
+    fn value_color(&self, _: &Self::Style) -> Color { self.text }
     fn disabled_color(&self, style: &Self::Style) -> Color { self.value_color(style) }
-    fn selection_color(&self, _: &Self::Style) -> Color { color!(0xb4d5ff) }
+    fn selection_color(&self, _: &Self::Style) -> Color { self.input_selection }
 }
 
 #[derive(Default)]
-pub enum ButtonState {
+pub enum ButtonStyle {
     #[default]
     Normal,
     Selected
 }
 
 impl button::StyleSheet for Theme {
-    type Style = ButtonState;
+    type Style = ButtonStyle;
 
     fn active(&self, style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: Some(match style {
-                ButtonState::Normal => color!(0x24273a),
-                ButtonState::Selected => color!(0x494d64)
+                ButtonStyle::Normal => self.choice_background,
+                ButtonStyle::Selected => self.selected_choice_background
             }.into()),
-            text_color: self.text_color,
+            text_color: self.text,
             ..Default::default()
         }
     }
 
     fn hovered(&self, _: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(color!(0x363a4f).into()),
-            text_color: self.text_color,
+            background: Some(self.hovered_choice_background.into()),
+            text_color: self.text,
             ..Default::default()
         }
     }
 
     fn pressed(&self, _: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(color!(0x181926).into()),
-            text_color: self.text_color,
+            background: Some(self.pressed_choice_background.into()),
+            text_color: self.text,
             ..Default::default()
         }
     }
@@ -117,12 +147,8 @@ impl container::StyleSheet for Theme {
 
     fn appearance(&self, _: &Self::Style) -> container::Appearance {
         container::Appearance {
-            text_color: Some(self.text_color),
+            text_color: Some(self.text),
             ..Default::default()
-            // background: (),
-            // border_radius: (), 
-            // border_width: (),
-            // border_color: ()
         }
     }
 }
@@ -137,9 +163,9 @@ impl scrollable::StyleSheet for Theme {
             border_width: 0.0,
             border_color: Color::TRANSPARENT,
             scroller: scrollable::Scroller {
-                color: color!(0xdddddd),
+                color: if self.scrollbar_enabled { self.scrollbar } else { Color::TRANSPARENT },
                 border_color: Color::TRANSPARENT,
-                border_radius: 0.0.into(),
+                border_radius: self.scrollbar_border_radius.into(),
                 border_width: 0.0
             }
         }
@@ -151,8 +177,8 @@ impl scrollable::StyleSheet for Theme {
             is_mouse_over_scrollbar: bool,
         ) -> scrollable::Scrollbar {
         let mut normal = self.active(style);
-        if is_mouse_over_scrollbar {
-            normal.scroller.color = color!(0xeeeeee);
+        if is_mouse_over_scrollbar && self.scrollbar_enabled {
+            normal.scroller.color = self.hovered_scrollbar;
         }
         normal
     }

@@ -6,7 +6,7 @@ use iced::{Application, executor, Command, widget::{row as irow, text_input, col
 
 use crate::{search::{self, plugin::{get_plugins, execution::{PluginExecution, PluginAction}, Plugin}, create_entries, EntryTrait, Entry}, icon::{IconCache, Icon}, config::Config};
 
-use self::styled::{Theme, ButtonState};
+use self::styled::{Theme, ButtonStyle, TextStyle};
 
 mod styled;
 
@@ -94,7 +94,22 @@ impl Application for Keal {
 
     fn theme(&self) -> Self::Theme {
         Theme {
-            text_color: color!(0xcad3f5)
+            text: color!(0xcad3f5),
+            background: color!(0x24273a),
+            input_placeholder: color!(0xa5adcb),
+            input_selection: color!(0xb4d5ff, 0.2),
+            input_background: color!(0x363a4f),
+            matched_text: color!(0xa6da95),
+            selected_matched_text: color!(0xeed49f),
+            comment: color!(0xa5adcb),
+            choice_background: color!(0x24273a),
+            selected_choice_background: color!(0x494d64),
+            hovered_choice_background: color!(0x363a4f),
+            pressed_choice_background: color!(0x181926),
+            scrollbar_enabled: true,
+            scrollbar: color!(0x5b6078),
+            hovered_scrollbar: color!(0x6e738d),
+            scrollbar_border_radius: 2.0
         }
     }
 
@@ -132,10 +147,9 @@ impl Application for Keal {
 
                 for (span, highlighted) in entry.fuzzy_match_span(&self.matcher, &self.query) {
                     item = item.push(text(span).size(self.config.font_size).style(
-                        match (highlighted, selected) {
-                            (false, _) => None,
-                            (true, false) => Some(styled::MATCHED_TEXT_COLOR),
-                            (true, true) => Some(styled::SELECTED_MATCHED_TEXT_COLOR)
+                        match highlighted {
+                            false => TextStyle::Normal,
+                            true => TextStyle::Matched { selected },
                         }
                     ));
                 }
@@ -143,12 +157,12 @@ impl Application for Keal {
                 item = item.push(
                     text(entry.comment().unwrap_or(""))
                         .size(self.config.font_size)
-                        .style(styled::COMMENT_COLOR)
+                        .style(TextStyle::Comment)
                 );
 
                 button(item)
                     .on_press(Message::Launch(index))
-                    .style(if selected { ButtonState::Selected } else { ButtonState::Normal })
+                    .style(if selected { ButtonStyle::Selected } else { ButtonStyle::Normal })
                     .padding([10, 20, 10, 10])
             })
                 .map(Element::<_, _>::from)
