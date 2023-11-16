@@ -2,9 +2,11 @@ use std::{process, os::unix::process::CommandExt};
 
 use fork::{fork, Fork};
 use fuzzy_matcher::skim::SkimMatcherV2;
-use iced::{Application, Theme, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, theme, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
+use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, color, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 
 use crate::{search::{self, plugin::{get_plugins, execution::{PluginExecution, PluginAction}, Plugin}, create_entries, EntryTrait, Entry}, icon::{IconCache, Icon}, config::Config};
+
+use self::styled::{Theme, ButtonState};
 
 mod styled;
 
@@ -91,13 +93,9 @@ impl Application for Keal {
     }
 
     fn theme(&self) -> Self::Theme {
-        Theme::Custom(Box::new(theme::Custom::new(theme::Palette {
-            text: color!(0xcad3f5),
-            background: color!(0x24273a),
-            danger: color!(0xed8796),
-            primary: color!(0xf5a97f),
-            success: color!(0xa6da95)
-        })))
+        Theme {
+            text_color: color!(0xcad3f5)
+        }
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
@@ -105,7 +103,6 @@ impl Application for Keal {
             .on_input(Message::TextInput)
             .on_submit(Message::Launch(self.selected))
             .size(self.config.font_size * 1.25).padding(self.config.font_size)
-            .style(theme::TextInput::Custom(Box::new(styled::Input)))
             .id(text_input::Id::new("query_input"));
 
         let input = container(input)
@@ -125,7 +122,7 @@ impl Application for Keal {
 
                 if let Some(icon) = entry.icon() {
                     if let Some(icon) = self.icons.get(icon) {
-                        let element: Element<_> = match icon {
+                        let element: Element<_, _> = match icon {
                             Icon::Svg(path) => svg(svg::Handle::from_path(path)).width(self.config.font_size).height(self.config.font_size).into(),
                             Icon::Other(path) => image(path).width(self.config.font_size).height(self.config.font_size).into()
                         };
@@ -134,30 +131,27 @@ impl Application for Keal {
                 }
 
                 for (span, highlighted) in entry.fuzzy_match_span(&self.matcher, &self.query) {
-                    let style = match highlighted {
-                        false => theme::Text::Default,
-                        true => theme::Text::Color(
-                            if selected { *styled::SELECTED_MATCHED_TEXT_COLOR } else { *styled::MATCHED_TEXT_COLOR }
-                        )
-                    };
-
-                    item = item.push(text(span).size(self.config.font_size).style(style));
+                    item = item.push(text(span).size(self.config.font_size).style(
+                        match (highlighted, selected) {
+                            (false, _) => None,
+                            (true, false) => Some(styled::MATCHED_TEXT_COLOR),
+                            (true, true) => Some(styled::SELECTED_MATCHED_TEXT_COLOR)
+                        }
+                    ));
                 }
                 item = item.push(Space::with_width(Length::Fill));
                 item = item.push(
                     text(entry.comment().unwrap_or(""))
                         .size(self.config.font_size)
-                        .style(theme::Text::Color(*styled::COMMENT_COLOR))
+                        .style(styled::COMMENT_COLOR)
                 );
 
                 button(item)
                     .on_press(Message::Launch(index))
-                    .style(
-                        if selected { theme::Button::custom(styled::SelectedItem) }
-                        else { theme::Button::custom(styled::Item) })
+                    .style(if selected { ButtonState::Selected } else { ButtonState::Normal })
                     .padding([10, 20, 10, 10])
             })
-                .map(Element::from)
+                .map(Element::<_, _>::from)
                 .collect()
         }));
 

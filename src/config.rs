@@ -13,7 +13,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            font: "Iosevkt".to_owned(),
+            font: "Iosevka".to_owned(),
             font_size: 16.0,
             font_weight: font::Weight::Medium,
             font_stretch: font::Stretch::Normal,
