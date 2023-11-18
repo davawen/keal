@@ -26,6 +26,7 @@ TODO: application gif
 - [ ] Built-in plugins (session, list installed plugins, ...) 
 - [ ] Error feedback in UI instead of panicking/logging to stderr
 - [ ] Plugin database
+- [ ] Asynchronous plugin execution
 
 ## Configuration
 Keal is configured in `~/.config/keal/config.ini`.

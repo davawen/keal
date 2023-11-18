@@ -11,33 +11,60 @@ use super::EntryTrait;
 pub struct DesktopEntry {
     name: String,
     comment: Option<String>,
+    pub icon: Option<IconPath>,
     /// cache the string that will be used for fuzzy matching
-    /// concatenation of name, generic name, categories and comment
+    /// concatenation of name, generic name, categories, keywords and comment
     to_match: String,
     pub exec: String,
-    pub icon: Option<IconPath>
+    pub path: Option<String>,
+    pub terminal: bool
 }
 
 impl DesktopEntry {
-    fn new(ini: Ini) -> Option<Self> {
+    /// `ini` is the .desktop file as parsed by `tini`.
+    /// `current_desktop` is the `$XDG_CURRENT_DESKTOP` environment variable, split by colon
+    fn new(ini: Ini, current_desktop: &[&str]) -> Option<Self> {
         let mut ini: HashMap<_, _> = ini
             .section_iter("Desktop Entry")
             .map(|(a, b)| (a.to_owned(), b.to_owned()))
             .collect();
 
+        if ini.get("Type")? != "Application" {
+            return None
+        }
+        
+        if let Some(no_display) = ini.get("NoDisplay") {
+            if no_display == "true" { return None }
+        }
+
+        // TODO: handle `Hidden` key: https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#recognized-keys
+
+        if let Some(only_show_in) = ini.get("OnlyShowIn") {
+            let contained = only_show_in.split(';').any(|x| current_desktop.contains(&x));
+            if !contained { return None }
+        }
+
+        if let Some(not_show_in) = ini.get("NotShowIn") {
+            let contained = not_show_in.split(';').any(|x| current_desktop.contains(&x));
+            if contained { return None }
+        }
+
         let name = ini.remove("Name")?;
         let comment = ini.remove("Comment");
-        let to_match = format!("{name}{}{}{}",
+        let icon = ini.remove("Icon").map(|i| IconPath::new(i, None));
+        let to_match = format!("{name}{}{}{}{}",
             ini.get("GenericName").map(String::as_ref).unwrap_or(""),
             ini.get("Categories").map(String::as_ref).unwrap_or(""),
+            ini.get("Keywords").map(String::as_ref).unwrap_or(""),
             comment.as_deref().unwrap_or(""),
         );
         let exec = ini.remove("Exec")?;
-        let icon = ini.remove("Icon").map(|i| IconPath::new(i, None));
+        let path = ini.remove("Path");
+        let terminal = ini.get("Terminal").map(|v| v == "true").unwrap_or(false);
 
         Some(DesktopEntry {
-            name, comment, to_match,
-            exec, icon
+            name, comment, icon, to_match,
+            exec, path, terminal
         })
     }
 }
@@ -80,8 +107,8 @@ pub fn config_dir() -> Result<PathBuf, &'static str> {
 }
 
 /// Returns the list of all applications on the system
-/// Uses `collisions` to avoid putting the same application twice in the list
-pub fn desktop_entries() -> impl Iterator<Item = DesktopEntry> {
+/// `current_desktop` is the `$XDG_CURRENT_DESKTOP` environment variable split by colon
+pub fn desktop_entries<'a>(current_desktop: &'a [&str]) -> impl Iterator<Item = DesktopEntry> + 'a {
     let app_dirs = xdg_directories("applications");
 
     app_dirs.into_iter().flat_map(|path| {
@@ -95,7 +122,7 @@ pub fn desktop_entries() -> impl Iterator<Item = DesktopEntry> {
             .map(|entry| entry.into_path())
             .filter(|path| path.extension().map(|e| e == "desktop").unwrap_or(false))
             .flat_map(|path| Ini::from_file(&path))
-            .flat_map(DesktopEntry::new);
+            .flat_map(|ini| DesktopEntry::new(ini, current_desktop));
         
         std::io::Result::Ok(entries) // type annotations needed
     }).flatten()

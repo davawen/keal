@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use enum_dispatch::enum_dispatch;
 use fuzzy_matcher::FuzzyMatcher;
 
@@ -49,11 +47,10 @@ pub enum Entry {
 }
 
 pub fn create_entries(plugins: &Plugins) -> Vec<Entry> {
-    // TODO: smarter collision checks (prefer entries with comments/no mime type), maybe store every entry in an IndexMap?
-    let mut collisions = HashSet::new();
+    let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let current_desktop: Vec<_> = current_desktop.split(':').collect();
 
-    xdg::desktop_entries()
-        .filter(|entry| collisions.insert(entry.name().to_owned())).map(Entry::from)
+    xdg::desktop_entries(&current_desktop).map(Entry::from)
         .chain(plugin::plugin_entries(plugins).map(Entry::from))
         .collect()
 }
