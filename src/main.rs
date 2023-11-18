@@ -8,7 +8,7 @@ mod icon;
 mod config;
 
 fn main() -> iced::Result {
-    let config = config::load_config();
+    let config = config::Config::load();
 
     ui::Keal::run(Settings {
         window: window::Settings {
