@@ -1,7 +1,17 @@
 # Keal
 
-A fast application launcher, that works under wayland, with the convenience and extensibility of ULauncher, but without the cruft or the bugs.  
-(or at least, that's my goals ^^')
+A fast application launcher, that works under wayland, with the convenience and extensibility of ULauncher, but without the occasional slowness, and that is easier to extend.  
+
+## Installation
+
+### With cargo:
+```
+$ git clone https://github.com/davawen/keal
+$ cd keal
+$ cargo install --path .
+```
+`keal` will now be located in `$CARGO_HOME/bin`.  
+You can move it to `/usr/local/bin` if you wish to.
 
 ## Usage
 Simply launch the `keal` executable and search something.
