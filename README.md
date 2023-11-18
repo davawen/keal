@@ -105,7 +105,8 @@ Concretely, here is how communication looks like:
 ```
 
 Different options are indicated by a field name, a colon, and a value.
-A choice list expects `name:`s, with optional icons and comments, finished with an `end`.
+A choice list expects `name:`s, with optional icons and comments, finished with an `end`.  
+Empty lines are ignored.
 
 - Keal can take the following actions:
   - `fork`: Closes the window, and continue the plugin as a separate process

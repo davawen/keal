@@ -135,6 +135,7 @@ impl PluginExecution {
         // Read initial entries line by line
         for line in self.stdout.by_ref() {
             let Ok(line) = line else { continue };
+            if line.is_empty() { continue }
 
             match line.split_once(':') {
                 Some(line) => match (&mut current, line) {
