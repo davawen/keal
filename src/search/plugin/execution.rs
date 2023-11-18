@@ -119,7 +119,7 @@ impl PluginExecution {
                 _ => match action {
                     "fork" => PluginAction::Fork,
                     "wait_and_close" => PluginAction::WaitAndClose,
-                    "update-all" => PluginAction::UpdateAll(self.get_choice_list()),
+                    "update_all" => PluginAction::UpdateAll(self.get_choice_list()),
                     "none" => PluginAction::None,
                     action => panic!("unknown action `{action}`")
                 }

@@ -115,7 +115,7 @@ Empty lines are ignored.
   - `change_input:<value>`: Change's the entire input field (including plugin prefix) to the string following the colon.
       Note that the plugin should terminate after sending this action.
   - `change_query:<value>`: Same as `change_input`, but keeps plugin prefix
-  - `update-all`: Replace the current choice list with a new one
+  - `update_all`: Replace the current choice list with a new one
   - `update:<index>`: Change a single choice. Give it as a one-element choice list (don't forget the `end`!)
   - `none`: Do nothing
 - And you can subscribe to the following events:
@@ -131,14 +131,17 @@ And here is an exemple of a more interactive plugin:
 <- end
 -> query
 -> ~
-<- action:update-all
+<- action:update_all
 <- name:~/Documents
 <- name:~/Pictures
+...
 <- end
 -> enter
 -> 1
-<- action:update-all
+<- action:update_all
 <- name:~/Pictures/Photos
+<- name:~/Pictures/image.png
+...
 <- end
 -> shift_enter
 -> 0
