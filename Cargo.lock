@@ -1245,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "keal"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "bitflags 2.4.1",
  "enum_dispatch",

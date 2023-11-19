@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::{PathBuf, Path}};
 use tini::Ini;
 use walkdir::WalkDir;
 
-use crate::icon::IconPath;
+use crate::icon::{IconPath, Icon};
 
 use super::EntryTrait;
 
@@ -22,8 +22,9 @@ pub struct DesktopEntry {
 
 impl DesktopEntry {
     /// `ini` is the .desktop file as parsed by `tini`.
+    /// `location` is the path to the desktop file
     /// `current_desktop` is the `$XDG_CURRENT_DESKTOP` environment variable, split by colon
-    fn new(ini: Ini, current_desktop: &[&str]) -> Option<Self> {
+    fn new(ini: Ini, location: &Path, current_desktop: &[&str]) -> Option<Self> {
         let mut ini: HashMap<_, _> = ini
             .section_iter("Desktop Entry")
             .map(|(a, b)| (a.to_owned(), b.to_owned()))
@@ -58,7 +59,7 @@ impl DesktopEntry {
             ini.get("Keywords").map(String::as_ref).unwrap_or(""),
             comment.as_deref().unwrap_or(""),
         );
-        let exec = ini.remove("Exec")?;
+        let exec = parse_exec_key(ini.remove("Exec")?, &name, location, icon.as_ref());
         let path = ini.remove("Path");
         let terminal = ini.get("Terminal").map(|v| v == "true").unwrap_or(false);
 
@@ -67,6 +68,42 @@ impl DesktopEntry {
             exec, path, terminal
         })
     }
+}
+
+/// https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#exec-variables
+/// `name`, `location` and `icon` are required for the `%c`, `%k` and `%i` codes
+fn parse_exec_key(exec: String, name: &str, location: &Path, icon: Option<&IconPath>) -> String {
+    // unsure how it could be possible to avoid reallocating...
+    // since modifying the string in place might entail large moves that would be worse
+    // in the end, most of those strings will be less 128 bytes, so I guess it doesn't really matter in the end.
+    let mut out = String::with_capacity(exec.capacity());
+    let mut chars = exec.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '%' => if let Some(c) = chars.next() {
+                match c {
+                    '%' => out.push('%'),
+                    'f' | 'F' | 'u' | 'U' => (), // don't expand "input parameters"
+                    'd' | 'D' | 'n' | 'N' | 'v' | 'm' => (), // deprecated codes
+                    'i' => match icon { // insert `--icon {icon name}`
+                        Some(IconPath::Name(name)) if !name.is_empty() => out.push_str(&format!("--icon {name}")),
+                        Some(IconPath::Path(Icon::Svg(path) | Icon::Other(path))) if !path.as_os_str().is_empty() => if let Some(path) = path.to_str() {
+                            out.push_str(&format!("--icon {path}"))
+                        }
+                        _ => ()
+                    }
+                    'c' => out.push_str(name), // supposed to be the translated name.  TODO: handle locales
+                    'k' => if let Some(location) = location.to_str() {
+                        out.push_str(location)
+                    }
+                    _ => () // malformed code
+                }
+            },
+            c => out.push(c)
+        }
+    }
+
+    out
 }
 
 impl EntryTrait for DesktopEntry {
@@ -121,8 +158,8 @@ pub fn desktop_entries<'a>(current_desktop: &'a [&str]) -> impl Iterator<Item = 
             .filter(|entry| entry.metadata().map(|x| !x.is_dir()).unwrap_or(true))
             .map(|entry| entry.into_path())
             .filter(|path| path.extension().map(|e| e == "desktop").unwrap_or(false))
-            .flat_map(|path| Ini::from_file(&path))
-            .flat_map(|ini| DesktopEntry::new(ini, current_desktop));
+            .flat_map(|path| Result::<_, tini::Error>::Ok((Ini::from_file(&path)?, path)))
+            .flat_map(|(ini, path)| DesktopEntry::new(ini, &path, current_desktop));
         
         std::io::Result::Ok(entries) // type annotations needed
     }).flatten()

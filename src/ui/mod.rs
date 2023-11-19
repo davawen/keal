@@ -187,10 +187,12 @@ impl Application for Keal {
                     // launch application and close window
                     Entry::DesktopEntry(app) => {
                          // TODO: parse XDG desktop parameters
-                        process::Command::new("sh") // ugly work around to avoir parsing spaces/quotes
-                            .arg("-c")
-                            .arg(&app.exec)
-                            .exec();
+                        let mut command = process::Command::new("sh"); // ugly work around to avoir parsing spaces/quotes
+                        command.arg("-c").arg(&app.exec);
+                        if let Some(path) = &app.path {
+                            command.current_dir(path);
+                        }
+                        command.exec();
 
                         return iced::window::close()
                     }
