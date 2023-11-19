@@ -1,4 +1,4 @@
-use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write}, path::PathBuf};
+use std::{iter::Peekable, process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write, Lines}, path::{PathBuf, Path}};
 
 use bitflags::bitflags;
 use fuzzy_matcher::FuzzyMatcher;
@@ -15,7 +15,7 @@ pub struct PluginExecution {
     pub entries: Vec<PluginEntry>,
     pub child: std::process::Child,
     stdin: ChildStdin,
-    stdout: std::io::Lines<BufReader<ChildStdout>>,
+    stdout: Peekable<Lines<BufReader<ChildStdout>>>,
     events: PluginEvents,
     cwd: PathBuf
 }
@@ -46,7 +46,7 @@ impl PluginExecution {
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
-        let stdout = BufReader::new(stdout).lines();
+        let stdout = BufReader::new(stdout).lines().peekable();
 
         let mut this = Self {
             prefix: plugin.prefix.clone(),
@@ -120,41 +120,24 @@ impl PluginExecution {
 
     fn get_choice_list(&mut self) -> Vec<PluginEntry> {
         let mut entries = vec![];
-        let mut current: Option<PluginEntry> = None;
 
         // Read initial entries line by line
-        for line in self.stdout.by_ref() {
-            let Ok(line) = line else { continue };
-            if line.is_empty() { continue }
-
-            match line.split_once(':') {
-                Some(line) => match (&mut current, line) {
-                    (current, ("name", name)) => {
-                        if let Some(old) = current.take() {
-                            entries.push(old);
-                        }
-
-                        *current = Some(PluginEntry {
-                            field: name.to_owned(),
-                            icon: None,
-                            comment: None
-                        });
-                    }
-                    (Some(current), ("icon", icon)) => current.icon = Some(IconPath::new(icon.to_owned(), Some(&self.cwd))),
-                    (Some(current), ("comment", comment)) => current.comment = Some(comment.to_owned()),
-                    (None, ("icon" | "comment", _)) => eprintln!("using a modifier descriptor before setting a field in plugin `{}`", self.prefix),
-                    (_, (descriptor, _)) => eprintln!("unknown descriptor `{descriptor}` in plugin `{}`", self.prefix)
-                },
-                None => match line.as_str() {
-                    "end" => {
-                        if let Some(old) = current.take() {
-                            entries.push(old);
-                        }
-                        break
-                    }
-                    line => eprintln!("expected choice or `end`, got `{line}`.")
+        while self.stdout.peek().is_some() {
+            // looks at the next line
+            // if it is "end", or an error, break out of the loop
+            match self.stdout.peek().unwrap().as_deref() {
+                Ok("end") => {
+                    self.stdout.next();
+                    break
                 }
+                Err(_) => break,
+                _ => ()
             }
+
+            let (name, icon, comment) = read_entry_from_stream(&mut self.stdout, Some(&self.cwd));
+            entries.push(PluginEntry {
+                field: name, icon, comment
+            });
         }
 
         entries
@@ -184,4 +167,29 @@ impl<M: FuzzyMatcher> EntryTrait<M> for PluginEntry {
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn to_match(&self) ->  &str { &self.field }
+}
+
+pub fn read_entry_from_stream<B: BufRead>(
+    lines: &mut Peekable<Lines<B>>,
+    cwd: Option<&Path>
+) -> (String, Option<IconPath>, Option<String>) {
+    let (mut name, mut icon, mut comment) = (String::new(), None, None);
+
+    while let Some(line) = lines.next() {
+        let Ok(line) = line else { continue };
+
+        match line.split_once(':') {
+            Some(("name", n)) => name = n.to_owned(),
+            Some(("icon", i)) => icon = Some(IconPath::new(i.to_owned(), cwd)),
+            Some(("comment", c)) => comment = Some(c.to_owned()),
+            _ if !line.is_empty() => eprintln!("unknown descriptor in input: `{line}`"),
+            _ => ()
+        }
+
+        if let Some(Ok(next)) = lines.peek() {
+            if next.starts_with("name") || next == "end" { break }
+        }
+    }
+
+    (name, icon, comment)
 }

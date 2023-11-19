@@ -23,6 +23,9 @@ pub enum Icon {
 
 impl IconPath {
     pub fn new(value: String, cwd: Option<&Path>) -> Self {
+        let process_cwd = std::env::current_dir().ok();
+        let cwd = cwd.or(process_cwd.as_deref());
+
         if Path::new(&value).is_absolute() {
             IconPath::Path(PathBuf::from(value).into())
         } else if Path::new(&value).starts_with("./") && cwd.is_some() {

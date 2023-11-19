@@ -4,7 +4,7 @@ use fork::{fork, Fork};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 
-use crate::{entries::{Entries, Action}, icon::{IconCache, Icon}, config::Config, providers::plugin::get_plugins};
+use crate::{entries::{Entries, Action}, icon::{IconCache, Icon}, config::Config};
 
 pub use styled::Theme;
 use styled::{ButtonStyle, TextStyle};
@@ -43,8 +43,7 @@ impl Application for Keal {
     type Flags = Config;
 
     fn new(config: Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        let plugins = get_plugins();
-        let entries = Entries::new(plugins);
+        let entries = Entries::new(false);
 
         let icons = IconCache::new(&config.icon_theme);
 
@@ -197,6 +196,10 @@ impl Keal {
             }
             Action::Exec(mut command) => {
                 let _ = command.exec();
+                return iced::window::close();
+            }
+            Action::PrintAndClose(message) => {
+                println!("{message}");
                 return iced::window::close();
             }
             Action::Fork => match fork().expect("failed to fork") {

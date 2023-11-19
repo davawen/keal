@@ -3,7 +3,9 @@ use std::process;
 use fuzzy_matcher::FuzzyMatcher;
 
 use crate::icon::IconPath;
+use crate::providers::dmenu::{self, read_dmenu_entries};
 use crate::providers::plugin::execution::{PluginExecution, PluginEntry};
+use crate::providers::plugin::get_plugins;
 use crate::providers::{xdg, plugin::{self, Plugins}};
 
 use self::match_span::MatchSpan;
@@ -42,31 +44,42 @@ pub trait EntryTrait<M: FuzzyMatcher> {
 pub enum EntryKind {
     Desktop,
     Prefix,
-    Plugin
+    Plugin,
+    Dmenu
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Entry(EntryKind, usize, i64);
 
+#[derive(Default)]
 pub struct Entries {
     plugins: Plugins,
     desktop: Vec<xdg::DesktopEntry>,
     prefix: Vec<plugin::PrefixEntry>,
+    dmenu: Vec<dmenu::DmenuEntry>,
     pub execution: Option<PluginExecution>,
     pub filtered: Vec<Entry>
 }
 
 impl Entries {
-    pub fn new(plugins: Plugins) -> Self {
-        let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
-        let current_desktop: Vec<_> = current_desktop.split(':').collect();
+    pub fn new(dmenu: bool) -> Self {
+        if dmenu {
+            Self {
+                dmenu: read_dmenu_entries(dmenu::Protocol::RofiExtended),
+                ..Default::default()
+            }
+        } else {
+            let plugins = get_plugins();
 
-        Self {
-            desktop: xdg::desktop_entries(&current_desktop).collect(),
-            prefix: plugin::plugin_entries(&plugins).collect(),
-            plugins,
-            execution: None,
-            filtered: vec![]
+            let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+            let current_desktop: Vec<_> = current_desktop.split(':').collect();
+
+            Self {
+                desktop: xdg::desktop_entries(&current_desktop).collect(),
+                prefix: plugin::plugin_entries(&plugins).collect(),
+                plugins,
+                ..Default::default()
+            }
         }
     }
 
@@ -75,7 +88,8 @@ impl Entries {
             .map(|&Entry(kind, i, _)| match kind {
                 EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait<M>,
                 EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait<M>,
-                EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait<M>
+                EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait<M>,
+                EntryKind::Dmenu => &self.dmenu[i] as &dyn EntryTrait<M>
             })
     }
 
@@ -88,6 +102,7 @@ impl Entries {
             None => {
                 self.filtered = fuzzy_match_entries(matcher, EntryKind::Desktop, &self.desktop, filter)
                     .chain(fuzzy_match_entries(matcher, EntryKind::Prefix, &self.prefix, filter))
+                    .chain(fuzzy_match_entries(matcher, EntryKind::Dmenu, &self.dmenu, filter))
                     .collect()
             }
         }
@@ -155,6 +170,10 @@ impl Entries {
                 let Some(execution) = &mut self.execution else { return Action::None };
                 execution.send_enter(idx)
             }
+            EntryKind::Dmenu => {
+                let dmenu = &self.dmenu[idx];
+                Action::PrintAndClose(dmenu.name.to_owned())
+            }
         }
     }
 }
@@ -174,6 +193,8 @@ pub enum Action {
     ChangeQuery(String),
     // Desktop file related
     Exec(process::Command),
+    // Dmenu related
+    PrintAndClose(String),
     // Plugin related
     Fork,
     WaitAndClose,
