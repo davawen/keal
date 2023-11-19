@@ -2,7 +2,8 @@
 
 use iced::{Application, Settings, window, Font, font};
 
-mod search;
+mod entries;
+mod providers;
 mod ui;
 mod icon;
 mod config;

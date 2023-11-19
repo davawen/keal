@@ -1,11 +1,10 @@
 use std::{collections::HashMap, path::Path};
 
+use fuzzy_matcher::FuzzyMatcher;
 use tini::Ini;
 use walkdir::WalkDir;
 
-use crate::{icon::{IconPath, Icon}, xdg_utils::xdg_directories};
-
-use super::EntryTrait;
+use crate::{entries::EntryTrait, icon::{IconPath, Icon}, xdg_utils::xdg_directories};
 
 #[derive(Debug)]
 pub struct DesktopEntry {
@@ -106,7 +105,7 @@ fn parse_exec_key(exec: String, name: &str, location: &Path, icon: Option<&IconP
     out
 }
 
-impl EntryTrait for DesktopEntry {
+impl<M: FuzzyMatcher> EntryTrait<M> for DesktopEntry {
     fn name(&self) ->  &str { &self.name }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }

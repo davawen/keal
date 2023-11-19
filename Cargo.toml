@@ -1,13 +1,12 @@
 [package]
 name = "keal"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 bitflags = "2.4.1"
-enum_dispatch = "0.3.12"
 fork = "0.1.22"
 fuzzy-matcher = "0.3.7"
 iced = { version = "0.10.0", features = ["image", "svg", "web-colors"] }

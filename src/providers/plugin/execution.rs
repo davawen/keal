@@ -1,8 +1,9 @@
 use std::{process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write}, path::PathBuf};
 
 use bitflags::bitflags;
+use fuzzy_matcher::FuzzyMatcher;
 
-use crate::{search::{EntryTrait, Entry}, icon::IconPath};
+use crate::{entries::{EntryTrait, Action}, icon::IconPath};
 
 use super::Plugin;
 
@@ -11,7 +12,7 @@ use super::Plugin;
 #[derive(Debug)]
 pub struct PluginExecution {
     pub prefix: String,
-    pub entries: Vec<Entry>,
+    pub entries: Vec<FieldEntry>,
     pub child: std::process::Child,
     stdin: ChildStdin,
     stdout: std::io::Lines<BufReader<ChildStdout>>,
@@ -27,17 +28,6 @@ bitflags! {
         const ShiftEnter = 0b10;
         const Query = 0b100;
     }
-}
-
-#[must_use]
-pub enum PluginAction {
-    Fork,
-    WaitAndClose,
-    ChangeInput(String),
-    ChangeQuery(String),
-    UpdateAll(Vec<Entry>),
-    Update(usize, Entry),
-    None
 }
 
 // TODO: Better error handling for plugins: instead of panicking or logging to stderr, show feedback in window
@@ -89,38 +79,38 @@ impl PluginExecution {
     }
 
     /// Send `query` event to plugin
-    pub fn send_query(&mut self, query: &str) -> Option<PluginAction> {
-        if !self.events.intersects(PluginEvents::Query) { return None }
+    pub fn send_query(&mut self, query: &str) -> Action {
+        if !self.events.intersects(PluginEvents::Query) { return Action::None }
 
         writeln!(self.stdin, "query\n{query}").unwrap();
-        Some(self.get_action())
+        self.get_action()
     }
 
     /// Send `enter` event to plugin
     /// Expects `idx` to be valid
-    pub fn send_enter(&mut self, idx: usize) -> Option<PluginAction> {
-        if !self.events.intersects(PluginEvents::Enter) { return None }
+    pub fn send_enter(&mut self, idx: usize) -> Action {
+        if !self.events.intersects(PluginEvents::Enter) { return Action::None }
 
         writeln!(self.stdin, "enter\n{idx}").unwrap();
-        Some(self.get_action())
+        self.get_action()
     }
 
-    fn get_action(&mut self) -> PluginAction {
+    fn get_action(&mut self) -> Action {
         let line = self.stdout.next().unwrap().unwrap();
 
         match line.split_once(':') {
             Some(("action", action)) => match action.split_once(':') {
-                Some(("change_input", value)) => PluginAction::ChangeInput(value.to_owned()),
-                Some(("change_query", value)) => PluginAction::ChangeQuery(value.to_owned()),
-                Some(("update", index)) => PluginAction::Update(
+                Some(("change_input", value)) => Action::ChangeInput(value.to_owned()),
+                Some(("change_query", value)) => Action::ChangeQuery(value.to_owned()),
+                Some(("update", index)) => Action::Update(
                     index.parse().unwrap(),
                     self.get_choice_list().pop().expect("one element for update action")
                 ),
                 _ => match action {
-                    "fork" => PluginAction::Fork,
-                    "wait_and_close" => PluginAction::WaitAndClose,
-                    "update_all" => PluginAction::UpdateAll(self.get_choice_list()),
-                    "none" => PluginAction::None,
+                    "fork" => Action::Fork,
+                    "wait_and_close" => Action::WaitAndClose,
+                    "update_all" => Action::UpdateAll(self.get_choice_list()),
+                    "none" => Action::None,
                     action => panic!("unknown action `{action}`")
                 }
             }
@@ -128,7 +118,7 @@ impl PluginExecution {
         }
     }
 
-    fn get_choice_list(&mut self) -> Vec<Entry> {
+    fn get_choice_list(&mut self) -> Vec<FieldEntry> {
         let mut entries = vec![];
         let mut current: Option<FieldEntry> = None;
 
@@ -141,7 +131,7 @@ impl PluginExecution {
                 Some(line) => match (&mut current, line) {
                     (current, ("name", name)) => {
                         if let Some(old) = current.take() {
-                            entries.push(old.into());
+                            entries.push(old);
                         }
 
                         *current = Some(FieldEntry {
@@ -158,7 +148,7 @@ impl PluginExecution {
                 None => match line.as_str() {
                     "end" => {
                         if let Some(old) = current.take() {
-                            entries.push(old.into());
+                            entries.push(old);
                         }
                         break
                     }
@@ -189,7 +179,7 @@ pub struct FieldEntry {
     icon: Option<IconPath>
 }
 
-impl EntryTrait for FieldEntry {
+impl<M: FuzzyMatcher> EntryTrait<M> for FieldEntry {
     fn name(&self) ->  &str { &self.field }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }

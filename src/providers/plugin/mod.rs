@@ -1,13 +1,12 @@
 use std::{collections::HashMap, fs, path::{Path, PathBuf}};
 
+use fuzzy_matcher::FuzzyMatcher;
 use tini::Ini;
 
 pub mod execution;
 use execution::PluginExecution;
 
-use crate::{icon::IconPath, xdg_utils::config_dir};
-
-use super::EntryTrait;
+use crate::{entries::EntryTrait, icon::IconPath, xdg_utils::config_dir};
 
 #[derive(Debug, Clone)]
 pub struct Plugin {
@@ -40,12 +39,12 @@ impl Plugin {
 
 #[derive(Debug)]
 pub struct PluginEntry {
-    prefix: String,
+    pub prefix: String,
     comment: String,
     icon: Option<IconPath>
 }
 
-impl EntryTrait for PluginEntry {
+impl<M: FuzzyMatcher> EntryTrait<M> for PluginEntry {
     fn name(&self) ->  &str { &self.prefix }
     fn comment(&self) -> Option<&str> { Some(&self.comment) }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
