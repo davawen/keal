@@ -3,7 +3,7 @@ use std::process;
 use fuzzy_matcher::FuzzyMatcher;
 
 use crate::icon::IconPath;
-use crate::providers::plugin::execution::{PluginExecution, FieldEntry};
+use crate::providers::plugin::execution::{PluginExecution, PluginEntry};
 use crate::providers::{xdg, plugin::{self, Plugins}};
 
 use self::match_span::MatchSpan;
@@ -39,21 +39,21 @@ pub trait EntryTrait<M: FuzzyMatcher> {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy)]
-pub enum Entry {
-    DesktopEntry,
-    PluginEntry,
-    FieldEntry
+pub enum EntryKind {
+    Desktop,
+    Prefix,
+    Plugin
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct EntryRef(Entry, usize, i64);
+pub struct Entry(EntryKind, usize, i64);
 
 pub struct Entries {
     plugins: Plugins,
     desktop: Vec<xdg::DesktopEntry>,
-    prefix: Vec<plugin::PluginEntry>,
+    prefix: Vec<plugin::PrefixEntry>,
     pub execution: Option<PluginExecution>,
-    pub filtered: Vec<EntryRef>
+    pub filtered: Vec<Entry>
 }
 
 impl Entries {
@@ -72,10 +72,10 @@ impl Entries {
 
     pub fn iter<M: FuzzyMatcher>(&self) -> impl Iterator<Item = &dyn EntryTrait<M>> {
         self.filtered.iter()
-            .map(|&EntryRef(kind, i, _)| match kind {
-                Entry::DesktopEntry => &self.desktop[i] as &dyn EntryTrait<M>,
-                Entry::PluginEntry => &self.prefix[i] as &dyn EntryTrait<M>,
-                Entry::FieldEntry => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait<M>
+            .map(|&Entry(kind, i, _)| match kind {
+                EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait<M>,
+                EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait<M>,
+                EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait<M>
             })
     }
 
@@ -83,16 +83,16 @@ impl Entries {
     pub fn filter(&mut self, matcher: &impl FuzzyMatcher, filter: &str, n: usize) {
         match &self.execution {
             Some(execution) => {
-                self.filtered = fuzzy_match_entries(matcher, Entry::FieldEntry, &execution.entries, filter).collect();
+                self.filtered = fuzzy_match_entries(matcher, EntryKind::Plugin, &execution.entries, filter).collect();
             }
             None => {
-                self.filtered = fuzzy_match_entries(matcher, Entry::DesktopEntry, &self.desktop, filter)
-                    .chain(fuzzy_match_entries(matcher, Entry::PluginEntry, &self.prefix, filter))
+                self.filtered = fuzzy_match_entries(matcher, EntryKind::Desktop, &self.desktop, filter)
+                    .chain(fuzzy_match_entries(matcher, EntryKind::Prefix, &self.prefix, filter))
                     .collect()
             }
         }
 
-        self.filtered.sort_unstable_by_key(|&EntryRef(_, _, score)| std::cmp::Reverse(score));
+        self.filtered.sort_unstable_by_key(|&Entry(_, _, score)| std::cmp::Reverse(score));
         self.filtered.truncate(n);
     }
 
@@ -134,10 +134,10 @@ impl Entries {
 
     /// `selected` is an index into `self.filtered`. it may not be valid.
     pub fn launch(&mut self, selected: usize) -> Action {
-        let Some(&EntryRef(kind, idx, _)) = self.filtered.get(selected) else { return Action::None };
+        let Some(&Entry(kind, idx, _)) = self.filtered.get(selected) else { return Action::None };
 
         match kind {
-            Entry::DesktopEntry => {
+            EntryKind::Desktop => {
                 let app = &self.desktop[idx];
 
                 let mut command = process::Command::new("sh"); // ugly work around to avoir parsing spaces/quotes
@@ -147,11 +147,11 @@ impl Entries {
                 }
                 Action::Exec(command)
             }
-            Entry::PluginEntry => {
+            EntryKind::Prefix => {
                 let plugin = &self.prefix[idx];
                 Action::ChangeInput(format!("{} ", plugin.prefix))
             }
-            Entry::FieldEntry => {
+            EntryKind::Plugin => {
                 let Some(execution) = &mut self.execution else { return Action::None };
                 execution.send_enter(idx)
             }
@@ -159,11 +159,11 @@ impl Entries {
     }
 }
 
-fn fuzzy_match_entries<'a, M: FuzzyMatcher, E: EntryTrait<M>>(matcher: &'a M, kind: Entry, entries: &'a [E], filter: &'a str) -> impl Iterator<Item = EntryRef> + 'a {
+fn fuzzy_match_entries<'a, M: FuzzyMatcher, E: EntryTrait<M>>(matcher: &'a M, kind: EntryKind, entries: &'a [E], filter: &'a str) -> impl Iterator<Item = Entry> + 'a {
     entries.iter()
         .map(|entry| entry.fuzzy_match(matcher, filter))
         .enumerate()
-        .flat_map(move |(i, e)| Some(EntryRef(kind, i, e?)))
+        .flat_map(move |(i, e)| Some(Entry(kind, i, e?)))
 }
 
 #[must_use]
@@ -177,6 +177,6 @@ pub enum Action {
     // Plugin related
     Fork,
     WaitAndClose,
-    UpdateAll(Vec<FieldEntry>),
-    Update(usize, FieldEntry),
+    UpdateAll(Vec<PluginEntry>),
+    Update(usize, PluginEntry),
 }

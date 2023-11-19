@@ -12,7 +12,7 @@ use super::Plugin;
 #[derive(Debug)]
 pub struct PluginExecution {
     pub prefix: String,
-    pub entries: Vec<FieldEntry>,
+    pub entries: Vec<PluginEntry>,
     pub child: std::process::Child,
     stdin: ChildStdin,
     stdout: std::io::Lines<BufReader<ChildStdout>>,
@@ -118,9 +118,9 @@ impl PluginExecution {
         }
     }
 
-    fn get_choice_list(&mut self) -> Vec<FieldEntry> {
+    fn get_choice_list(&mut self) -> Vec<PluginEntry> {
         let mut entries = vec![];
-        let mut current: Option<FieldEntry> = None;
+        let mut current: Option<PluginEntry> = None;
 
         // Read initial entries line by line
         for line in self.stdout.by_ref() {
@@ -134,7 +134,7 @@ impl PluginExecution {
                             entries.push(old);
                         }
 
-                        *current = Some(FieldEntry {
+                        *current = Some(PluginEntry {
                             field: name.to_owned(),
                             icon: None,
                             comment: None
@@ -173,13 +173,13 @@ impl Drop for PluginExecution {
 }
 
 #[derive(Debug)]
-pub struct FieldEntry {
+pub struct PluginEntry {
     field: String,
     comment: Option<String>,
     icon: Option<IconPath>
 }
 
-impl<M: FuzzyMatcher> EntryTrait<M> for FieldEntry {
+impl<M: FuzzyMatcher> EntryTrait<M> for PluginEntry {
     fn name(&self) ->  &str { &self.field }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }

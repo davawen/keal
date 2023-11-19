@@ -38,13 +38,13 @@ impl Plugin {
 }
 
 #[derive(Debug)]
-pub struct PluginEntry {
+pub struct PrefixEntry {
     pub prefix: String,
     comment: String,
     icon: Option<IconPath>
 }
 
-impl<M: FuzzyMatcher> EntryTrait<M> for PluginEntry {
+impl<M: FuzzyMatcher> EntryTrait<M> for PrefixEntry {
     fn name(&self) ->  &str { &self.prefix }
     fn comment(&self) -> Option<&str> { Some(&self.comment) }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
@@ -81,9 +81,9 @@ pub fn get_plugins() -> Plugins {
         .collect())
 }
 
-pub fn plugin_entries(plugins: &Plugins) -> impl Iterator<Item = PluginEntry> + '_ {
+pub fn plugin_entries(plugins: &Plugins) -> impl Iterator<Item = PrefixEntry> + '_ {
     plugins.0.values()
-        .map(|plugin| PluginEntry {
+        .map(|plugin| PrefixEntry {
             prefix: plugin.prefix.clone(),
             icon: plugin.icon.clone(),
             comment: format!("{}{}", plugin.name, plugin.comment.as_ref()
