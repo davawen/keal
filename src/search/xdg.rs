@@ -1,9 +1,9 @@
-use std::{collections::HashMap, path::{PathBuf, Path}};
+use std::{collections::HashMap, path::Path};
 
 use tini::Ini;
 use walkdir::WalkDir;
 
-use crate::icon::{IconPath, Icon};
+use crate::{icon::{IconPath, Icon}, xdg_utils::xdg_directories};
 
 use super::EntryTrait;
 
@@ -111,36 +111,6 @@ impl EntryTrait for DesktopEntry {
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn to_match(&self) ->  &str { &self.to_match }
-}
-
-pub fn xdg_directories<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
-    let mut data_dirs: Vec<_> = std::env::var("XDG_DATA_DIRS")
-        .map(|dirs| dirs.split(':').map(PathBuf::from).collect())
-        .unwrap_or_default();
-
-    if let Ok(home) = std::env::var("XDG_DATA_HOME") {
-        data_dirs.push(home.into());
-    }
-
-    for path in &mut data_dirs {
-        path.push(&dir);
-    }
-
-    data_dirs
-}
-
-/// Returns the path equivalent to `~/.config/keal`
-pub fn config_dir() -> Result<PathBuf, &'static str> {
-    let mut dir = if let Some(config) = std::env::var_os("XDG_CONFIG_HOME") {
-        PathBuf::from(config)
-    } else if let Some(home) = std::env::var_os("HOME") {
-        Path::new(&home).join(".config")
-    } else {
-        return Err("neither $XDG_CONFIG_HOME nor $HOME are enabled. Didn't load any plugin.");
-    };
-    dir.push("keal");
-
-    Ok(dir)
 }
 
 /// Returns the list of all applications on the system

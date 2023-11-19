@@ -5,9 +5,9 @@ use tini::Ini;
 pub mod execution;
 use execution::PluginExecution;
 
-use crate::icon::IconPath;
+use crate::{icon::IconPath, xdg_utils::config_dir};
 
-use super::{EntryTrait, xdg::config_dir};
+use super::EntryTrait;
 
 #[derive(Debug, Clone)]
 pub struct Plugin {

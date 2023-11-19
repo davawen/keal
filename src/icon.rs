@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::{PathBuf, Path}};
 
 use walkdir::WalkDir;
 
-use crate::search::xdg::xdg_directories;
+use crate::xdg_utils::xdg_directories;
 
 /// Distinguishes between a direct path to an icon, and an icon identifier that needs to be searched in IconCache.
 #[derive(Debug, Clone)]

@@ -6,6 +6,7 @@ mod search;
 mod ui;
 mod icon;
 mod config;
+mod xdg_utils;
 
 fn main() -> iced::Result {
     let config = config::Config::load();

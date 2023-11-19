@@ -1,6 +1,6 @@
 use iced::font;
 
-use crate::search::xdg::config_dir;
+use crate::xdg_utils::config_dir;
 
 pub struct Config {
     pub font: String,
