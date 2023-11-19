@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 
+use arguments::Arguments;
 use iced::{Application, Settings, window, Font, font};
+use ui::Flags;
 
 mod entries;
 mod providers;
@@ -9,8 +11,19 @@ mod icon;
 mod config;
 mod xdg_utils;
 
-fn main() -> iced::Result {
+mod arguments;
+
+fn main() -> anyhow::Result<()> {
+    let arguments = match Arguments::parse() {
+        Ok(a) => a,
+        Err(arguments::Error::Exit) => return Ok(()),
+        Err(arguments::Error::UnknownFlag(flag)) => {
+            anyhow::bail!("error: unknown flag `{flag}`")
+        }
+    };
+
     let config = config::Config::load();
+    let entries = entries::Entries::new(&arguments);
 
     ui::Keal::run(Settings {
         window: window::Settings {
@@ -28,7 +41,9 @@ fn main() -> iced::Result {
             stretch: config.font_stretch,
             ..Default::default()
         },
-        flags: config,
+        flags: Flags(config, entries),
         ..Default::default()
-    })
+    })?;
+
+    Ok(())
 }

@@ -2,6 +2,7 @@ use std::process;
 
 use fuzzy_matcher::FuzzyMatcher;
 
+use crate::arguments::Arguments;
 use crate::icon::IconPath;
 use crate::providers::dmenu::{self, read_dmenu_entries};
 use crate::providers::plugin::execution::{PluginExecution, PluginEntry};
@@ -62,10 +63,10 @@ pub struct Entries {
 }
 
 impl Entries {
-    pub fn new(dmenu: bool) -> Self {
-        if dmenu {
+    pub fn new(arguments: &Arguments) -> Self {
+        if arguments.dmenu {
             Self {
-                dmenu: read_dmenu_entries(dmenu::Protocol::RofiExtended),
+                dmenu: read_dmenu_entries(arguments.protocol),
                 ..Default::default()
             }
         } else {

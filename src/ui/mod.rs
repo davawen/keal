@@ -36,15 +36,16 @@ pub enum Message {
 
 // TODO: fuzzel-like often launched applications
 
+#[derive(Default)]
+pub struct Flags(pub Config, pub Entries);
+
 impl Application for Keal {
     type Message = Message;
     type Theme = Theme;
     type Executor = executor::Default;
-    type Flags = Config;
+    type Flags = Flags;
 
-    fn new(config: Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        let entries = Entries::new(false);
-
+    fn new(Flags(config, entries): Self::Flags) -> (Self, iced::Command<Self::Message>) {
         let icons = IconCache::new(&config.icon_theme);
 
         let mut this = Keal {

@@ -31,7 +31,7 @@ TODO: application gif
   - [ ] Plugin overrides
 - [ ] Custom aliases
 - [ ] Frequently launched applications/plugins
-- [ ] Dmenu mode (with rofi extended protocol)
+- [x] Dmenu mode (with rofi extended protocol)
 - [x] Custom plugins 
 - [ ] Built-in plugins (session, list installed plugins, ...) 
 - [ ] Error feedback in UI instead of panicking/logging to stderr

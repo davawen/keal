@@ -1,7 +1,7 @@
 use fuzzy_matcher::FuzzyMatcher;
 use std::{iter::Peekable, io::Lines};
 
-use crate::{entries::EntryTrait, icon::IconPath};
+use crate::{entries::EntryTrait, icon::IconPath, arguments::Protocol};
 
 use super::plugin::execution::read_entry_from_stream;
 
@@ -43,11 +43,6 @@ impl DmenuEntry {
         let (name, icon, comment) = read_entry_from_stream(lines, None);
         Self { name, icon, comment }
     }
-}
-
-pub enum Protocol {
-    RofiExtended,
-    Keal
 }
 
 pub fn read_dmenu_entries(protocol: Protocol) -> Vec<DmenuEntry> {
