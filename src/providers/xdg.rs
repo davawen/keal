@@ -1,6 +1,5 @@
 use std::{collections::HashMap, path::Path};
 
-use fuzzy_matcher::FuzzyMatcher;
 use tini::Ini;
 use walkdir::WalkDir;
 
@@ -105,7 +104,7 @@ fn parse_exec_key(exec: String, name: &str, location: &Path, icon: Option<&IconP
     out
 }
 
-impl<M: FuzzyMatcher> EntryTrait<M> for DesktopEntry {
+impl EntryTrait for DesktopEntry {
     fn name(&self) ->  &str { &self.name }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }

@@ -28,7 +28,7 @@ TODO: application gif
 
 - [x] Search installed applications and desktop files 
 - [x] Configuration (font, style/colors, icon theme)
-  - [ ] Plugin overrides
+  - [ ] Plugin overrides/configuration
 - [ ] Custom aliases
 - [ ] Frequently launched applications/plugins
 - [x] Dmenu mode (with rofi extended protocol)

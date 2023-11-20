@@ -1,4 +1,3 @@
-use fuzzy_matcher::FuzzyMatcher;
 use std::{iter::Peekable, io::Lines};
 
 use crate::{entries::EntryTrait, icon::IconPath, arguments::Protocol};
@@ -11,7 +10,7 @@ pub struct DmenuEntry {
     comment: Option<String>
 }
 
-impl<M: FuzzyMatcher> EntryTrait<M> for DmenuEntry {
+impl EntryTrait for DmenuEntry {
     fn name(&self) -> &str { &self.name }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }

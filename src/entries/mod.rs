@@ -1,6 +1,7 @@
 use std::process;
 
-use fuzzy_matcher::FuzzyMatcher;
+use nucleo_matcher::{Matcher, Utf32Str};
+use nucleo_matcher::pattern::Pattern;
 
 use crate::arguments::Arguments;
 use crate::icon::IconPath;
@@ -13,25 +14,31 @@ use self::match_span::MatchSpan;
 
 mod match_span;
 
-pub trait EntryTrait<M: FuzzyMatcher> {
+pub trait EntryTrait {
     fn name(&self) -> &str;
     fn comment(&self) -> Option<&str>;
     fn icon(&self) -> Option<&IconPath>;
     /// what should be used to match the entry
     fn to_match(&self) -> &str;
 
-    fn fuzzy_match(&self, matcher: &M, filter: &str) -> Option<i64> {
-        matcher.fuzzy_match(self.to_match(), filter)
+    // TODO: Don't rebuild Utf32Str everytime (it's a lot more convenient for now)
+    fn fuzzy_match(&self, matcher: &mut Matcher, pattern: &Pattern, buf: &mut Vec<char>) -> Option<u32> {
+        pattern.score(Utf32Str::new(self.to_match(), buf), matcher)
     }
 
     /// Returns an iterator over the spans of the entry's name that match the given filter
-    fn fuzzy_match_span(&self, matcher: &M, filter: &str) -> MatchSpan {
+    fn fuzzy_match_span(&self, matcher: &mut Matcher, pattern: &Pattern, buf: &mut Vec<char>) -> MatchSpan {
+        let mut indices = vec![];
+        pattern.indices(Utf32Str::new(self.name(), buf), matcher, &mut indices);
+        indices.sort_unstable();
+        indices.dedup();
+
         let mut chars = self.name().char_indices();
         chars.next(); // advance char iterator to match the state of MatchSpan
 
         MatchSpan {
             item: self.name(),
-            matched: matcher.fuzzy_indices(self.name(), filter).map(|(_, v)| v).unwrap_or_default(),
+            matched: indices,
             matched_index: 0,
             byte_offset: 0,
             index: 0,
@@ -50,7 +57,7 @@ pub enum EntryKind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Entry(EntryKind, usize, i64);
+pub struct Entry(EntryKind, usize, u32);
 
 #[derive(Default)]
 pub struct Entries {
@@ -84,27 +91,27 @@ impl Entries {
         }
     }
 
-    pub fn iter<M: FuzzyMatcher>(&self) -> impl Iterator<Item = &dyn EntryTrait<M>> {
+    pub fn iter(&self) -> impl Iterator<Item = &dyn EntryTrait> {
         self.filtered.iter()
             .map(|&Entry(kind, i, _)| match kind {
-                EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait<M>,
-                EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait<M>,
-                EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait<M>,
-                EntryKind::Dmenu => &self.dmenu[i] as &dyn EntryTrait<M>
+                EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait,
+                EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait,
+                EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait,
+                EntryKind::Dmenu => &self.dmenu[i] as &dyn EntryTrait
             })
     }
 
     /// Filters and sorts the `n` closest entries to `filter` into `self.filtered`.
-    pub fn filter(&mut self, matcher: &impl FuzzyMatcher, filter: &str, n: usize) {
+    pub fn filter(&mut self, matcher: &mut Matcher, filter: &Pattern, n: usize) {
+        let mut buf = vec![];
         match &self.execution {
             Some(execution) => {
-                self.filtered = fuzzy_match_entries(matcher, EntryKind::Plugin, &execution.entries, filter).collect();
+                self.filtered = fuzzy_match_entries(EntryKind::Plugin, &execution.entries, matcher, filter, &mut buf).collect();
             }
             None => {
-                self.filtered = fuzzy_match_entries(matcher, EntryKind::Desktop, &self.desktop, filter)
-                    .chain(fuzzy_match_entries(matcher, EntryKind::Prefix, &self.prefix, filter))
-                    .chain(fuzzy_match_entries(matcher, EntryKind::Dmenu, &self.dmenu, filter))
-                    .collect()
+                self.filtered = fuzzy_match_entries(EntryKind::Desktop, &self.desktop, matcher, filter, &mut buf).collect();
+                self.filtered.extend(fuzzy_match_entries(EntryKind::Prefix, &self.prefix, matcher, filter, &mut buf));
+                self.filtered.extend(fuzzy_match_entries(EntryKind::Dmenu, &self.dmenu, matcher, filter, &mut buf));
             }
         }
 
@@ -179,9 +186,9 @@ impl Entries {
     }
 }
 
-fn fuzzy_match_entries<'a, M: FuzzyMatcher, E: EntryTrait<M>>(matcher: &'a M, kind: EntryKind, entries: &'a [E], filter: &'a str) -> impl Iterator<Item = Entry> + 'a {
+fn fuzzy_match_entries<'a, E: EntryTrait>(kind: EntryKind, entries: &'a [E], matcher: &'a mut Matcher, pattern: &'a Pattern, buf: &'a mut Vec<char>) -> impl Iterator<Item = Entry> + 'a {
     entries.iter()
-        .map(|entry| entry.fuzzy_match(matcher, filter))
+        .map(|entry| entry.fuzzy_match(matcher, pattern, buf))
         .enumerate()
         .flat_map(move |(i, e)| Some(Entry(kind, i, e?)))
 }

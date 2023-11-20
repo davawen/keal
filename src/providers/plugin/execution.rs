@@ -1,8 +1,6 @@
 use std::{iter::Peekable, process::{ChildStdin, ChildStdout}, io::{BufRead, BufReader, Write, Lines}, path::{PathBuf, Path}};
 
 use bitflags::bitflags;
-use fuzzy_matcher::FuzzyMatcher;
-
 use crate::{entries::{EntryTrait, Action}, icon::IconPath};
 
 use super::Plugin;
@@ -162,7 +160,7 @@ pub struct PluginEntry {
     icon: Option<IconPath>
 }
 
-impl<M: FuzzyMatcher> EntryTrait<M> for PluginEntry {
+impl EntryTrait for PluginEntry {
     fn name(&self) ->  &str { &self.field }
     fn comment(&self) -> Option<&str> { self.comment.as_deref() }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }

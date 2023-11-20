@@ -1,6 +1,5 @@
 use std::{collections::HashMap, fs, path::{Path, PathBuf}};
 
-use fuzzy_matcher::FuzzyMatcher;
 use tini::Ini;
 
 pub mod execution;
@@ -44,7 +43,7 @@ pub struct PrefixEntry {
     icon: Option<IconPath>
 }
 
-impl<M: FuzzyMatcher> EntryTrait<M> for PrefixEntry {
+impl EntryTrait for PrefixEntry {
     fn name(&self) ->  &str { &self.prefix }
     fn comment(&self) -> Option<&str> { Some(&self.comment) }
     fn icon(&self) -> Option<&IconPath> { self.icon.as_ref() }

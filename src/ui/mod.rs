@@ -1,8 +1,8 @@
-use std::os::unix::process::CommandExt;
+use std::{os::unix::process::CommandExt, cell::RefCell};
 
 use fork::{fork, Fork};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
+use nucleo_matcher::{Matcher, pattern::{Pattern, CaseMatching}};
 
 use crate::{entries::{Entries, Action}, icon::{IconCache, Icon}, config::Config};
 
@@ -11,16 +11,14 @@ use styled::{ButtonStyle, TextStyle};
 
 mod styled;
 
-type Matcher = SkimMatcherV2;
-
 pub struct Keal {
     // UI state
     input: String,
-    query: String,
     selected: usize,
 
     // data state
-    matcher: Matcher,
+    query: Pattern,
+    matcher: RefCell<Matcher>,
     icons: IconCache,
     config: Config,
     entries: Entries
@@ -49,9 +47,10 @@ impl Application for Keal {
         let icons = IconCache::new(&config.icon_theme);
 
         let mut this = Keal {
-            input: String::new(), query: String::new(),
+            input: String::new(),
             selected: 0,
-            matcher: Matcher::default(),
+            query: Pattern::default(),
+            matcher: Matcher::default().into(),
             icons,
             config,
             entries
@@ -91,6 +90,9 @@ impl Application for Keal {
         let input = container(input)
             .width(Length::Fill);
 
+        let mut matcher = self.matcher.borrow_mut();
+        let mut buf = vec![];
+
         let entries = scrollable(icolumn({
             self.entries.iter().enumerate().map(|(index, entry)| {
                 let selected = self.selected == index;
@@ -107,7 +109,7 @@ impl Application for Keal {
                     }
                 }
 
-                for (span, highlighted) in entry.fuzzy_match_span(&self.matcher, &self.query) {
+                for (span, highlighted) in entry.fuzzy_match_span(&mut matcher, &self.query, &mut buf) {
                     item = item.push(text(span).size(self.config.font_size).style(
                         match highlighted {
                             false => TextStyle::Normal,
@@ -129,7 +131,7 @@ impl Application for Keal {
             })
                 .map(Element::<_, _>::from)
                 .collect()
-        }));
+        })).id(scrollable::Id::new("scrollable"));
 
         icolumn![ input, entries ]
             .width(Length::Fill).height(Length::Fill)
@@ -137,6 +139,8 @@ impl Application for Keal {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+        // iced::window::fetch_size(f)
+        // scrollable::Properties::default().width
         use keyboard::Event::KeyPressed;
         match message {
             Message::FontLoaded(_) => (),
@@ -169,14 +173,14 @@ impl Keal {
         self.input = input;
 
         let (query, action) = self.entries.update_input(&self.input, from_user);
-        self.query = query;
+        self.query.reparse(&query, CaseMatching::Ignore);
 
         self.filter();
         self.handle_action(action)
     }
 
     pub fn filter(&mut self) {
-        self.entries.filter(&self.matcher, &self.query, 50);
+        self.entries.filter(self.matcher.get_mut(), &self.query, 50);
     }
 
     fn handle_action(&mut self, action: Action) -> Command<Message> {

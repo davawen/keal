@@ -3,9 +3,9 @@ use std::str::CharIndices;
 
 pub struct MatchSpan<'a> {
     pub item: &'a str,
-    pub matched: Vec<usize>,
+    pub matched: Vec<u32>,
     pub matched_index: usize,
-    pub index: usize,
+    pub index: u32,
     pub byte_offset: usize,
     pub chars: CharIndices<'a>
 }
