@@ -2,11 +2,13 @@ use std::path::{Path, PathBuf};
 
 pub fn xdg_directories<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     let mut data_dirs: Vec<_> = std::env::var("XDG_DATA_DIRS")
-        .map(|dirs| dirs.split(':').map(PathBuf::from).collect())
-        .unwrap_or_default();
+        .unwrap_or("/usr/local/share:/usr/share".to_owned())
+        .split(':').map(PathBuf::from).collect();
 
-    if let Ok(home) = std::env::var("XDG_DATA_HOME") {
+    if let Some(home) = std::env::var_os("XDG_DATA_HOME") {
         data_dirs.push(home.into());
+    } else if let Some(home) = std::env::var_os("HOME") {
+        data_dirs.push(Path::new(&home).join(".local/share"))
     }
 
     for path in &mut data_dirs {
