@@ -3,16 +3,22 @@ use std::process;
 use nucleo_matcher::{Matcher, Utf32Str};
 use nucleo_matcher::pattern::Pattern;
 
-use crate::arguments::Arguments;
-use crate::icon::IconPath;
-use crate::providers::dmenu::{self, read_dmenu_entries};
-use crate::providers::plugin::execution::{PluginExecution, PluginEntry};
-use crate::providers::plugin::get_plugins;
-use crate::providers::{xdg, plugin::{self, Plugins}};
+use serde::{Serialize, Deserialize};
+
+use crate::{
+    arguments::Arguments, icon::IconPath,
+    providers::{
+        dmenu::{self, read_dmenu_entries},
+        plugin::{execution::{PluginExecution, PluginEntry}, get_plugins, self, Plugins},
+        xdg
+    }
+};
 
 use self::match_span::MatchSpan;
+use self::usage::Usage;
 
 mod match_span;
+mod usage;
 
 pub trait EntryTrait {
     fn name(&self) -> &str;
@@ -48,7 +54,7 @@ pub trait EntryTrait {
 }
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, Eq, Serialize, Deserialize, Clone, Copy)]
 pub enum EntryKind {
     Desktop,
     Prefix,
@@ -66,7 +72,8 @@ pub struct Entries {
     prefix: Vec<plugin::PrefixEntry>,
     dmenu: Vec<dmenu::DmenuEntry>,
     pub execution: Option<PluginExecution>,
-    pub filtered: Vec<Entry>
+    pub filtered: Vec<Entry>,
+    usage: Usage
 }
 
 impl Entries {
@@ -82,10 +89,20 @@ impl Entries {
             let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
             let current_desktop: Vec<_> = current_desktop.split(':').collect();
 
+            let usage = Usage::file_path();
+            let usage = if let Ok(file) = std::fs::File::open(&usage) {
+                serde_cbor::from_reader(file).unwrap_or_else(|_| {
+                    // assume corrupted file
+                    let _ = std::fs::remove_file(&usage);
+                    Usage::default()
+                })
+            } else { Usage::default() };
+
             Self {
                 desktop: xdg::desktop_entries(&current_desktop).collect(),
                 prefix: plugin::plugin_entries(&plugins).collect(),
                 plugins,
+                usage,
                 ..Default::default()
             }
         }
@@ -93,16 +110,21 @@ impl Entries {
 
     pub fn iter(&self) -> impl Iterator<Item = &dyn EntryTrait> {
         self.filtered.iter()
-            .map(|&Entry(kind, i, _)| match kind {
-                EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait,
-                EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait,
-                EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait,
-                EntryKind::Dmenu => &self.dmenu[i] as &dyn EntryTrait
-            })
+            .map(|&e| self.get_entry(e))
+    }
+
+    #[inline]
+    fn get_entry(&self, Entry(kind, i, _): Entry) -> &dyn EntryTrait {
+        match kind {
+            EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait,
+            EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait,
+            EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait,
+            EntryKind::Dmenu => &self.dmenu[i] as &dyn EntryTrait
+        }
     }
 
     /// Filters and sorts the `n` closest entries to `filter` into `self.filtered`.
-    pub fn filter(&mut self, matcher: &mut Matcher, filter: &Pattern, n: usize) {
+    pub fn filter(&mut self, matcher: &mut Matcher, filter: &Pattern, n: usize, frequency_sort: bool) {
         let mut buf = vec![];
         match &self.execution {
             Some(execution) => {
@@ -115,7 +137,20 @@ impl Entries {
             }
         }
 
-        self.filtered.sort_unstable_by_key(|&Entry(_, _, score)| std::cmp::Reverse(score));
+        // primary sort ranks by usage
+        if frequency_sort {
+            // annoying hack needed because `self.get_entry` borrows &self (even though it doesn't use `self.filtered`)
+            // this should get optimised away
+            let mut filtered = std::mem::take(&mut self.filtered); 
+
+            filtered.sort_by_key(|&entry| 
+                std::cmp::Reverse(self.usage.get((entry.0, self.get_entry(entry).name())))
+            );
+            self.filtered = filtered;
+        }
+
+        // secondary sort puts best match at the top (stable = keeps relative order of elements)
+        self.filtered.sort_by_key(|&Entry(_, _, score)| std::cmp::Reverse(score));
         self.filtered.truncate(n);
     }
 
@@ -163,6 +198,12 @@ impl Entries {
             EntryKind::Desktop => {
                 let app = &self.desktop[idx];
 
+                self.usage.add_use((EntryKind::Desktop, app.name()));
+
+                let usage = Usage::file_path();
+                let file = std::fs::File::create(usage).expect("failed to write to usage file");
+                let _ = serde_cbor::to_writer(file, &self.usage);
+
                 let mut command = process::Command::new("sh"); // ugly work around to avoir parsing spaces/quotes
                 command.arg("-c").arg(&app.exec);
                 if let Some(path) = &app.path {
@@ -172,6 +213,8 @@ impl Entries {
             }
             EntryKind::Prefix => {
                 let plugin = &self.prefix[idx];
+                self.usage.add_use((EntryKind::Prefix, &plugin.prefix));
+
                 Action::ChangeInput(format!("{} ", plugin.prefix))
             }
             EntryKind::Plugin => {

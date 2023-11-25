@@ -30,7 +30,7 @@ TODO: application gif
 - [x] Configuration (font, style/colors, icon theme)
   - [ ] Plugin overrides/configuration
 - [ ] Custom aliases
-- [ ] Frequently launched applications/plugins
+- [x] Frequently launched applications/plugins
 - [x] Dmenu mode (with rofi extended protocol)
 - [x] Custom plugins 
 - [ ] Built-in plugins (session, list installed plugins, ...) 
@@ -50,8 +50,9 @@ icon_theme = hicolor
 # you can specify multiple icon themes by preference:
 #   icon_theme = Zafiro-Icons-Dark,Adwaita,hicolor
 
+usage_frequency = true # show the most frequently launched applications first
+
 placeholder_text = search your dreams!
-; semicolons work for comments too
 
 [colors]
 # color syntax: `rrggbb` or `rrggbbaa`

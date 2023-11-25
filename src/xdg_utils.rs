@@ -2,8 +2,7 @@ use std::path::{Path, PathBuf};
 
 pub fn xdg_directories<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     let mut data_dirs: Vec<_> = std::env::var("XDG_DATA_DIRS")
-        .unwrap_or("/usr/local/share:/usr/share".to_owned())
-        .split(':').map(PathBuf::from).collect();
+        .unwrap_or("/usr/local/share:/usr/share".to_owned()) .split(':').map(PathBuf::from).collect();
 
     if let Some(home) = std::env::var_os("XDG_DATA_HOME") {
         data_dirs.push(home.into());
@@ -25,10 +24,23 @@ pub fn config_dir() -> Result<PathBuf, &'static str> {
     } else if let Some(home) = std::env::var_os("HOME") {
         Path::new(&home).join(".config")
     } else {
-        return Err("neither $XDG_CONFIG_HOME nor $HOME are enabled. Didn't load any plugin.");
+        return Err("neither $XDG_CONFIG_HOME nor $HOME are defined");
     };
     dir.push("keal");
 
     Ok(dir)
 }
 
+/// Returns the path equivalent to `~/.local/share/keal`
+pub fn state_dir() -> Result<PathBuf, &'static str> {
+    let mut dir = if let Some(state) = std::env::var_os("XDG_STATE_HOME") {
+        PathBuf::from(state)
+    } else if let Some(home) = std::env::var_os("HOME") {
+        Path::new(&home).join(".local/state")
+    } else {
+        return Err("neither $XDG_STATE_HOME nor $HOME are defined");
+    };
+    dir.push("keal");
+
+    Ok(dir)
+}

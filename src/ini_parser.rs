@@ -74,10 +74,12 @@ impl Ini {
         self.sections.insert(name, section);
     }
 
+    #[allow(unused)]
     pub fn globals(&self) -> impl Iterator<Item = (&String, &String)> {
         self.globals.iter()
     }
 
+    #[allow(unused)]
     pub fn sections(&self) -> impl Iterator<Item = (&String, &Section)> {
         self.sections.iter()
     }

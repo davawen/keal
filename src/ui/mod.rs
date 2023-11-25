@@ -117,12 +117,16 @@ impl Application for Keal {
                         }
                     ));
                 }
-                item = item.push(Space::with_width(Length::Fill));
-                item = item.push(
-                    text(entry.comment().unwrap_or(""))
-                        .size(self.config.font_size)
-                        .style(TextStyle::Comment)
-                );
+
+                item = item.push(Space::with_width(Length::Fill)); // fill the whole line up
+                if let Some(comment) = entry.comment() {
+                    item = item.push(Space::with_width(5.0)); // minimum amount of space between name and comment
+                    item = item.push(
+                        text(comment)
+                            .size(self.config.font_size)
+                            .style(TextStyle::Comment)
+                    );
+                }
 
                 button(item)
                     .on_press(Message::Launch(index))
@@ -180,7 +184,7 @@ impl Keal {
     }
 
     pub fn filter(&mut self) {
-        self.entries.filter(self.matcher.get_mut(), &self.query, 50);
+        self.entries.filter(self.matcher.get_mut(), &self.query, 50, self.config.usage_frequency);
     }
 
     fn handle_action(&mut self, action: Action) -> Command<Message> {

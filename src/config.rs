@@ -2,6 +2,9 @@ use iced::font;
 
 use crate::{xdg_utils::config_dir, ini_parser::Ini};
 
+// WARN: When adding fields to the config, remember to set them in `add_from_string`!
+
+// This should probably use serde, but the `serde_ini` crate seems suboptimal for sections, and the current custom parser works well enough
 #[derive(Debug)]
 pub struct Config {
     pub font: String,
@@ -10,6 +13,7 @@ pub struct Config {
     pub font_size: f32,
     pub icon_theme: Vec<String>,
     pub placeholder_text: String,
+    pub usage_frequency: bool,
     pub theme: crate::ui::Theme
 }
 
@@ -22,6 +26,7 @@ impl Default for Config {
             font_stretch: font::Stretch::Normal,
             icon_theme: vec![],
             placeholder_text: String::new(),
+            usage_frequency: false,
             theme: Default::default()
         }
     }
@@ -32,12 +37,11 @@ impl Config {
     pub fn default_config() -> Self {
         // SAFETY: the default config needs to have every field filled in
         let mut config = Config::default();
-        eprintln!("loading default-config");
-        config.add_from_file(include_str!("../public/default-config.ini").to_owned());
+        config.add_from_string(include_str!("../public/default-config.ini").to_owned());
         config
     }
 
-    fn add_from_file(&mut self, content: String) {
+    fn add_from_string(&mut self, content: String) {
         let file = Ini::from_string(content, &['#', ';']);
 
         // Since the name of the field in the ini is the same as in the `Config` struct, we can match it directly.
@@ -60,7 +64,7 @@ impl Config {
 
         for field in file.section_iter("keal") {
             parse_fields!(self, field, (
-                font, font_size, font_weight, font_stretch, icon_theme, placeholder_text
+                font, font_size, font_weight, font_stretch, icon_theme, placeholder_text, usage_frequency
             ));
         }
 
@@ -84,7 +88,7 @@ impl Config {
 
         let Ok(content) = std::fs::read_to_string(config_path) else { return config };
 
-        config.add_from_file(content);
+        config.add_from_string(content);
         config
     }
 }
