@@ -31,7 +31,7 @@ pub fn config_dir() -> Result<PathBuf, &'static str> {
     Ok(dir)
 }
 
-/// Returns the path equivalent to `~/.local/share/keal`
+/// Returns the path equivalent to `~/.local/state/keal`
 pub fn state_dir() -> Result<PathBuf, &'static str> {
     let mut dir = if let Some(state) = std::env::var_os("XDG_STATE_HOME") {
         PathBuf::from(state)
