@@ -152,11 +152,11 @@ impl Application for Keal {
             Message::Event(event) => match event {
                 KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
                 // TODO: gently scroll window to selected choice
-                KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
+                KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::N, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
                     self.selected += 1;
                     self.selected = self.selected.min(self.entries.filtered.len().saturating_sub(1));
                 }
-                KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL }
+                KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::P, modifiers: Modifiers::CTRL }
                 | KeyPressed { key_code: KeyCode::Up, .. } => {
                     self.selected = self.selected.saturating_sub(1);
                 }
