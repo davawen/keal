@@ -10,6 +10,7 @@ mod ui;
 mod icon;
 mod config;
 mod xdg_utils;
+mod ini_parser;
 
 mod arguments;
 

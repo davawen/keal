@@ -47,11 +47,13 @@ impl From<PathBuf> for Icon {
 }
 
 impl IconCache {
-    pub fn new(icon_theme: &str) -> Self {
-        let mut icon_dirs = xdg_directories("icons");
-        for dir in &mut icon_dirs {
-            dir.push(icon_theme);
-        }
+    pub fn new(icon_themes: &[String]) -> Self {
+        let icon_dirs = xdg_directories("icons");
+        // for every xdg directory, add icon theme, by order of preference
+        let mut icon_dirs: Vec<_> = icon_themes.iter()
+            .flat_map(|theme| icon_dirs.iter().map(move |dir| dir.join(theme)))
+            .collect();
+
         icon_dirs.push("/usr/share/pixmaps".into());
 
         let mut cache = Self::default();

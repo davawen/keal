@@ -47,8 +47,11 @@ font = Iosevka
 font_size = 16.0
 font_weight = medium
 icon_theme = hicolor
+# you can specify multiple icon themes by preference:
+#   icon_theme = Zafiro-Icons-Dark,Adwaita,hicolor
 
 placeholder_text = search your dreams!
+; semicolons work for comments too
 
 [colors]
 # color syntax: `rrggbb` or `rrggbbaa`
@@ -159,3 +162,9 @@ And here is an exemple of a more interactive plugin:
 <- action:fork
 (Launches file explorer)
 ```
+
+## Troubleshooting
+
+### Messed up colors / icons showing as black boxes
+
+Make sure you have graphics drivers installed, `iced` uses `wgpu`, which depends on Vulkan/OpenGL/Metal.

@@ -1,9 +1,8 @@
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 
-use tini::Ini;
 use walkdir::WalkDir;
 
-use crate::{entries::EntryTrait, icon::{IconPath, Icon}, xdg_utils::xdg_directories};
+use crate::{entries::EntryTrait, icon::{IconPath, Icon}, xdg_utils::xdg_directories, ini_parser::Ini};
 
 #[derive(Debug)]
 pub struct DesktopEntry {
@@ -22,11 +21,10 @@ impl DesktopEntry {
     /// `ini` is the .desktop file as parsed by `tini`.
     /// `location` is the path to the desktop file
     /// `current_desktop` is the `$XDG_CURRENT_DESKTOP` environment variable, split by colon
-    fn new(ini: Ini, location: &Path, current_desktop: &[&str]) -> Option<Self> {
-        let mut ini: HashMap<_, _> = ini
-            .section_iter("Desktop Entry")
-            .map(|(a, b)| (a.to_owned(), b.to_owned()))
-            .collect();
+    fn new(mut ini: Ini, location: &Path, current_desktop: &[&str]) -> Option<Self> {
+        let mut ini = ini
+            .remove_section("Desktop Entry")?
+            .into_map();
 
         if ini.get("Type")? != "Application" {
             return None
@@ -39,12 +37,12 @@ impl DesktopEntry {
         // TODO: handle `Hidden` key: https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#recognized-keys
 
         if let Some(only_show_in) = ini.get("OnlyShowIn") {
-            let contained = only_show_in.split(';').any(|x| current_desktop.contains(&x));
+            let contained = only_show_in.split(';').filter(|s| !s.is_empty()).any(|x| current_desktop.contains(&x));
             if !contained { return None }
         }
 
         if let Some(not_show_in) = ini.get("NotShowIn") {
-            let contained = not_show_in.split(';').any(|x| current_desktop.contains(&x));
+            let contained = not_show_in.split(';').filter(|s| !s.is_empty()).any(|x| current_desktop.contains(&x));
             if contained { return None }
         }
 
@@ -126,7 +124,7 @@ pub fn desktop_entries<'a>(current_desktop: &'a [&str]) -> impl Iterator<Item = 
             .filter(|entry| entry.metadata().map(|x| !x.is_dir()).unwrap_or(true))
             .map(|entry| entry.into_path())
             .filter(|path| path.extension().map(|e| e == "desktop").unwrap_or(false))
-            .flat_map(|path| Result::<_, tini::Error>::Ok((Ini::from_file(&path)?, path)))
+            .flat_map(|path| Some((Ini::from_file(&path, &['#']).ok()?, path)))
             .flat_map(|(ini, path)| DesktopEntry::new(ini, &path, current_desktop));
         
         std::io::Result::Ok(entries) // type annotations needed

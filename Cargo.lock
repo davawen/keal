@@ -1243,7 +1243,6 @@ dependencies = [
  "fork",
  "iced",
  "nucleo-matcher",
- "tini",
  "walkdir",
 ]
 
@@ -2447,12 +2446,6 @@ dependencies = [
  "jpeg-decoder",
  "weezl",
 ]
-
-[[package]]
-name = "tini"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e004df4c5f0805eb5f55883204a514cfa43a6d924741be29e871753a53d5565a"
 
 [[package]]
 name = "tiny-skia"

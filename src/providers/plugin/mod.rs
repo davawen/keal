@@ -1,11 +1,9 @@
 use std::{collections::HashMap, fs, path::{Path, PathBuf}};
 
-use tini::Ini;
-
 pub mod execution;
 use execution::PluginExecution;
 
-use crate::{entries::EntryTrait, icon::IconPath, xdg_utils::config_dir};
+use crate::{entries::EntryTrait, icon::IconPath, xdg_utils::config_dir, ini_parser::Ini};
 
 #[derive(Debug, Clone)]
 pub struct Plugin {
@@ -17,10 +15,9 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    pub fn new(plugin_path: &Path, ini: Ini) -> Option<Self> {
-        let mut ini: HashMap<_, _> = ini.section_iter("plugin")
-            .map(|(a, b)| (a.to_owned(), b.to_owned()))
-            .collect();
+    pub fn new(plugin_path: &Path, mut ini: Ini) -> Option<Self> {
+        let mut ini = ini.remove_section("plugin")?
+            .into_map();
 
         Some(Self {
             name: ini.remove("name")?,
@@ -74,7 +71,7 @@ pub fn get_plugins() -> Plugins {
         .filter(|entry| entry.file_type().unwrap().is_dir())
         .map(|entry| entry.path())
         .map(|path| (path.join("config.ini"), path))
-        .flat_map(|(config, path)| Ok::<_, tini::Error>((Ini::from_file(&config)?, path)))
+        .flat_map(|(config, path)| Some((Ini::from_file(config, &['#', ';']).ok()?, path)))
         .flat_map(|(config, path)| Plugin::new(&path, config))
         .map(|plugin| (plugin.prefix.clone(), plugin))
         .collect())

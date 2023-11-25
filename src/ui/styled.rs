@@ -25,7 +25,7 @@ macro_rules! color {
     };
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Theme {
     pub background: Color,
 

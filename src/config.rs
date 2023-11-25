@@ -1,41 +1,44 @@
 use iced::font;
 
-use crate::xdg_utils::config_dir;
+use crate::{xdg_utils::config_dir, ini_parser::Ini};
 
+#[derive(Debug)]
 pub struct Config {
     pub font: String,
     pub font_weight: font::Weight,
     pub font_stretch: font::Stretch,
     pub font_size: f32,
-    pub icon_theme: String,
+    pub icon_theme: Vec<String>,
     pub placeholder_text: String,
     pub theme: crate::ui::Theme
 }
 
 impl Default for Config {
     fn default() -> Self {
-        // SAFETY: the default config needs to have every field filled in
-        let mut config = Config::empty();
-        config.add_from_file(include_str!("../public/default-config.ini").to_owned());
-        config
-    }
-}
-
-impl Config {
-    fn empty() -> Self {
         Self {
             font: String::new(),
             font_size: 0.0,
             font_weight: font::Weight::Normal,
             font_stretch: font::Stretch::Normal,
-            icon_theme: String::new(),
+            icon_theme: vec![],
             placeholder_text: String::new(),
             theme: Default::default()
         }
     }
+}
+
+impl Config {
+    /// Loads the default included configuration (in public/default-config.ini)
+    pub fn default_config() -> Self {
+        // SAFETY: the default config needs to have every field filled in
+        let mut config = Config::default();
+        eprintln!("loading default-config");
+        config.add_from_file(include_str!("../public/default-config.ini").to_owned());
+        config
+    }
 
     fn add_from_file(&mut self, content: String) {
-        let Ok(file) = tini::Ini::from_string(content) else { return };
+        let file = Ini::from_string(content, &['#', ';']);
 
         // Since the name of the field in the ini is the same as in the `Config` struct, we can match it directly.
         // This is what `stringify!($name)` is doing.
@@ -74,7 +77,7 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        let mut config = Config::default();
+        let mut config = Config::default_config();
 
         let Ok(mut config_path) = config_dir() else { return config };
         config_path.push("config.ini");
@@ -88,6 +91,12 @@ impl Config {
 
 trait MyFromStr<T> {
     fn my_parse(&self) -> Result<T, &str>;
+}
+
+impl<T> MyFromStr<Vec<T>> for str where str: MyFromStr<T> {
+    fn my_parse(&self) -> Result<Vec<T>, &str> {
+        self.split(',').map(|x| x.my_parse()).collect::<Result<_, _>>()
+    }
 }
 
 impl MyFromStr<font::Weight> for str {
