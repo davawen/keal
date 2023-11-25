@@ -89,20 +89,11 @@ impl Entries {
             let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
             let current_desktop: Vec<_> = current_desktop.split(':').collect();
 
-            let usage = Usage::file_path();
-            let usage = if let Ok(file) = std::fs::File::open(&usage) {
-                serde_cbor::from_reader(file).unwrap_or_else(|_| {
-                    // assume corrupted file
-                    let _ = std::fs::remove_file(&usage);
-                    Usage::default()
-                })
-            } else { Usage::default() };
-
             Self {
                 desktop: xdg::desktop_entries(&current_desktop).collect(),
                 prefix: plugin::plugin_entries(&plugins).collect(),
                 plugins,
-                usage,
+                usage: Usage::load(),
                 ..Default::default()
             }
         }
@@ -199,10 +190,6 @@ impl Entries {
                 let app = &self.desktop[idx];
 
                 self.usage.add_use((EntryKind::Desktop, app.name()));
-
-                let usage = Usage::file_path();
-                let file = std::fs::File::create(usage).expect("failed to write to usage file");
-                let _ = serde_cbor::to_writer(file, &self.usage);
 
                 let mut command = process::Command::new("sh"); // ugly work around to avoir parsing spaces/quotes
                 command.arg("-c").arg(&app.exec);

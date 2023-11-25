@@ -45,7 +45,7 @@ pub struct Usage(HashMap<(EntryKind, String), usize>);
 impl Usage {
     /// Gets the canonical file path to the usage file
     /// NOTE: this creates the state directory if it doesn't exist!
-    pub fn file_path() -> PathBuf {
+    fn file_path() -> PathBuf {
         use crate::xdg_utils::state_dir;
         let mut path = state_dir().unwrap();
         let _ = std::fs::create_dir_all(&path);
@@ -54,12 +54,23 @@ impl Usage {
         path
     }
 
+    pub fn load() -> Self {
+        let usage = Usage::file_path();
+        if let Ok(file) = std::fs::File::open(&usage) {
+            serde_cbor::from_reader(file).unwrap_or_else(|_| {
+                // assume corrupted file
+                let _ = std::fs::remove_file(&usage);
+                Usage::default()
+            })
+        } else { Usage::default() }
+    }
+
     #[inline(always)]
     pub fn get(&self, k: (EntryKind, &str)) -> Option<&usize> {
         self.0.get(&k as &dyn UsageKey)
     }
 
-    /// Adds one use to a given entry
+    /// Adds one use to a given entry (and saves it to disk)
     /// If it doesn't exist, this inserts it and sets its count to 1 (by cloning the input `&str`)
     pub fn add_use(&mut self, k: (EntryKind, &str)) {
         if let Some(v) = self.0.get_mut(&k as &dyn UsageKey) {
@@ -67,5 +78,9 @@ impl Usage {
         } else {
             self.0.insert((k.0, k.1.to_owned()), 1);
         }
+
+        let usage = Usage::file_path();
+        let file = std::fs::File::create(usage).expect("failed to write to usage file");
+        let _ = serde_cbor::to_writer(file, self);
     }
 }
