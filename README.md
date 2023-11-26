@@ -15,7 +15,7 @@ You can move it to `/usr/local/bin` if you wish to.
 
 ## Usage
 Simply launch the `keal` executable and search something.
-You can use that arrow keys to select, or Ctrl+J and Ctrl+K.
+You can use the arrow keys to select, Ctrl+J and Ctrl+K or Ctrl-N and Ctrl-P.
 
 With sway or i3, add this to your config:
 ```i3config
