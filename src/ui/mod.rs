@@ -29,7 +29,8 @@ pub enum Message {
     FontLoaded(Result<(), font::Error>),
     TextInput(String),
     Launch(usize),
-    Event(keyboard::Event)
+    Event(keyboard::Event),
+    IconCacheLoaded(IconCache)
 }
 
 // TODO: fuzzel-like often launched applications
@@ -44,25 +45,30 @@ impl Application for Keal {
     type Flags = Flags;
 
     fn new(Flags(config, entries): Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        let icons = IconCache::new(&config.icon_theme);
+        let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
+
+        let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
+        let iosevka = font::load(iosevka.as_slice()).map(Message::FontLoaded);
+
+        let icon_theme = config.icon_theme.clone();
+        let load_icons = Command::perform(async move {
+            IconCache::new(&icon_theme)
+        }, Message::IconCacheLoaded);
+
+        let command = Command::batch(vec![iosevka, focus, load_icons]);
 
         let mut this = Keal {
             input: String::new(),
             selected: 0,
             query: Pattern::default(),
             matcher: Matcher::default().into(),
-            icons,
+            icons: IconCache::default(),
             config,
             entries
         };
         this.filter();
 
-        let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
-
-        let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
-        let iosevka = font::load(iosevka.as_slice()).map(Message::FontLoaded);
-
-        (this, Command::batch(vec![iosevka, focus]))
+        (this, command)
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
@@ -166,6 +172,7 @@ impl Application for Keal {
                 let action = self.entries.launch(&self.config, selected);
                 return self.handle_action(action);
             }
+            Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache
         };
 
         Command::none()

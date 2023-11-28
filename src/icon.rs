@@ -12,7 +12,7 @@ pub enum IconPath {
 }
 
 /// Links an icon name to its path
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct IconCache(HashMap<String, Icon>);
 
 #[derive(Debug, Clone)]
