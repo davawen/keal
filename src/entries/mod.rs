@@ -194,6 +194,7 @@ impl Entries {
 
                 let mut command = if app.terminal {
                     let mut command = process::Command::new(&config.terminal_path);
+                    command.arg("-e");
                     command.arg("sh");
                     command
                 } else {
