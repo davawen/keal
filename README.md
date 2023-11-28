@@ -50,6 +50,8 @@ icon_theme = hicolor
 # you can specify multiple icon themes by preference:
 #   icon_theme = Zafiro-Icons-Dark,Adwaita,hicolor
 
+terminal_path = kitty # which terminal to use to launch terminal applications
+
 usage_frequency = true # show the most frequently launched applications first
 
 placeholder_text = search your dreams!

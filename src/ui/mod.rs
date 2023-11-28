@@ -163,7 +163,7 @@ impl Application for Keal {
                 _ => ()
             }
             Message::Launch(selected) => {
-                let action = self.entries.launch(selected);
+                let action = self.entries.launch(&self.config, selected);
                 return self.handle_action(action);
             }
         };

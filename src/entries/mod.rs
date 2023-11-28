@@ -5,6 +5,7 @@ use nucleo_matcher::pattern::Pattern;
 
 use serde::{Serialize, Deserialize};
 
+use crate::config::Config;
 use crate::{
     arguments::Arguments, icon::IconPath,
     providers::{
@@ -182,7 +183,7 @@ impl Entries {
     }
 
     /// `selected` is an index into `self.filtered`. it may not be valid.
-    pub fn launch(&mut self, selected: usize) -> Action {
+    pub fn launch(&mut self, config: &Config, selected: usize) -> Action {
         let Some(&Entry(kind, idx, _)) = self.filtered.get(selected) else { return Action::None };
 
         match kind {
@@ -191,7 +192,13 @@ impl Entries {
 
                 self.usage.add_use((EntryKind::Desktop, app.name()));
 
-                let mut command = process::Command::new("sh"); // ugly work around to avoir parsing spaces/quotes
+                let mut command = if app.terminal {
+                    let mut command = process::Command::new(&config.terminal_path);
+                    command.arg("sh");
+                    command
+                } else {
+                    process::Command::new("sh")
+                };
                 command.arg("-c").arg(&app.exec);
                 if let Some(path) = &app.path {
                     command.current_dir(path);
