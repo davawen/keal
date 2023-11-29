@@ -71,7 +71,7 @@ pub struct Entries {
     plugins: Plugins,
     desktop: Vec<xdg::DesktopEntry>,
     prefix: Vec<plugin::PrefixEntry>,
-    dmenu: Vec<dmenu::DmenuEntry>,
+    dmenu: Option<Vec<dmenu::DmenuEntry>>,
     pub execution: Option<PluginExecution>,
     pub filtered: Vec<Entry>,
     usage: Usage
@@ -81,7 +81,7 @@ impl Entries {
     pub fn new(arguments: &Arguments) -> Self {
         if arguments.dmenu {
             Self {
-                dmenu: read_dmenu_entries(arguments.protocol),
+                dmenu: Some(read_dmenu_entries(arguments.protocol)),
                 ..Default::default()
             }
         } else {
@@ -111,7 +111,7 @@ impl Entries {
             EntryKind::Desktop => &self.desktop[i] as &dyn EntryTrait,
             EntryKind::Prefix => &self.prefix[i] as &dyn EntryTrait,
             EntryKind::Plugin => &self.execution.as_ref().unwrap().entries[i] as &dyn EntryTrait,
-            EntryKind::Dmenu => &self.dmenu[i] as &dyn EntryTrait
+            EntryKind::Dmenu => &self.dmenu.as_ref().unwrap()[i] as &dyn EntryTrait
         }
     }
 
@@ -125,7 +125,7 @@ impl Entries {
             None => {
                 self.filtered = fuzzy_match_entries(EntryKind::Desktop, &self.desktop, matcher, filter, &mut buf).collect();
                 self.filtered.extend(fuzzy_match_entries(EntryKind::Prefix, &self.prefix, matcher, filter, &mut buf));
-                self.filtered.extend(fuzzy_match_entries(EntryKind::Dmenu, &self.dmenu, matcher, filter, &mut buf));
+                self.filtered.extend(fuzzy_match_entries(EntryKind::Dmenu, self.dmenu.as_ref().unwrap(), matcher, filter, &mut buf));
             }
         }
 
@@ -183,8 +183,14 @@ impl Entries {
     }
 
     /// `selected` is an index into `self.filtered`. it may not be valid.
-    pub fn launch(&mut self, config: &Config, selected: usize) -> Action {
-        let Some(&Entry(kind, idx, _)) = self.filtered.get(selected) else { return Action::None };
+    pub fn launch(&mut self, input: &str, config: &Config, selected: usize) -> Action {
+        let Some(&Entry(kind, idx, _)) = self.filtered.get(selected) else { 
+            if self.dmenu.is_some() { // return typed text
+                return Action::PrintAndClose(input.to_owned());
+            }
+
+            return Action::None 
+        };
 
         match kind {
             EntryKind::Desktop => {
@@ -217,7 +223,7 @@ impl Entries {
                 execution.send_enter(idx)
             }
             EntryKind::Dmenu => {
-                let dmenu = &self.dmenu[idx];
+                let dmenu = &self.dmenu.as_ref().unwrap()[idx];
                 Action::PrintAndClose(dmenu.name.to_owned())
             }
         }

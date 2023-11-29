@@ -169,7 +169,7 @@ impl Application for Keal {
                 _ => ()
             }
             Message::Launch(selected) => {
-                let action = self.entries.launch(&self.config, selected);
+                let action = self.entries.launch(&self.input, &self.config, selected);
                 return self.handle_action(action);
             }
             Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache
