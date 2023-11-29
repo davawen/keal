@@ -125,7 +125,9 @@ impl Entries {
             None => {
                 self.filtered = fuzzy_match_entries(EntryKind::Desktop, &self.desktop, matcher, filter, &mut buf).collect();
                 self.filtered.extend(fuzzy_match_entries(EntryKind::Prefix, &self.prefix, matcher, filter, &mut buf));
-                self.filtered.extend(fuzzy_match_entries(EntryKind::Dmenu, self.dmenu.as_ref().unwrap(), matcher, filter, &mut buf));
+                if let Some(dmenu) = &self.dmenu {
+                    self.filtered.extend(fuzzy_match_entries(EntryKind::Dmenu, dmenu, matcher, filter, &mut buf));
+                }
             }
         }
 
