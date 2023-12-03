@@ -87,4 +87,8 @@ impl PluginExecution for DmenuPlugin {
             Entry::new(matcher, pattern, &mut charbuf, &entry.name, entry.icon.as_ref(), entry.comment.as_deref(), index)
         }).collect()
     }
+
+    fn get_name(&self, index: usize) -> &str {
+        &self.0[index].name
+    }
 }

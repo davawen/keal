@@ -198,6 +198,10 @@ impl PluginExecution for UserPlugin {
             Entry::new(matcher, pattern, &mut charbuf, &entry.name, entry.icon.as_ref(), entry.comment.as_deref(), index)
         }).collect()
     }
+
+    fn get_name(&self, index: usize) -> &str {
+        &self.entries[index].name
+    }
 }
 
 pub fn read_entry_from_stream<B: BufRead>(

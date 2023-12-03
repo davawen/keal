@@ -186,4 +186,8 @@ impl PluginExecution for ApplicationPlugin {
             })
         }).collect()
     }
+
+    fn get_name(&self, index: usize) -> &str {
+        &self.0[index].name
+    }
 }

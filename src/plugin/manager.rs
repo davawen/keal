@@ -3,7 +3,7 @@ use nucleo_matcher::{Matcher, pattern::Pattern};
 
 use crate::{config::Config, arguments::Arguments};
 
-use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, entry::LabelledEntry};
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, entry::LabelledEntry, usage::Usage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PluginIndex(usize);
@@ -16,7 +16,9 @@ pub struct PluginManager {
     default_plugins: Vec<(PluginIndex, Box<dyn PluginExecution>)>,
     /// if the user has typed a plugin prefix, then this will be the only plugin shown
     /// usize is an index into `self.plugins`
-    current: Option<(PluginIndex, Box<dyn PluginExecution>)>
+    current: Option<(PluginIndex, Box<dyn PluginExecution>)>,
+    /// how frequently different plugin entries are used
+    usage: Usage
 }
 
 impl PluginManager {
@@ -27,8 +29,7 @@ impl PluginManager {
                 plugins: IndexMap::from_iter([
                     (dmenu.prefix.clone(), dmenu)
                 ]),
-                default_plugins: vec![],
-                current: None
+                ..Default::default()
             };
 
             // add dmenu to default plugins at startup
@@ -37,8 +38,8 @@ impl PluginManager {
         } else {
             let mut this = Self {
                 plugins: get_user_plugins().into_iter().flatten().collect(),
-                default_plugins: vec![],
-                current: None
+                usage: Usage::load(),
+                ..Default::default()
             };
 
             let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
@@ -51,7 +52,7 @@ impl PluginManager {
     }
 
     fn add_default_plugin(&mut self, index: usize) {
-        let plugin = self.plugins.get_index(index).unwrap().1;
+        let plugin = &self.plugins[index];
         self.default_plugins.push((PluginIndex(index), (plugin.generator)(plugin, self)));
     }
 
@@ -65,17 +66,12 @@ impl PluginManager {
             }
         }
 
-        // // primary sort ranks by usage
-        // if frequency_sort {
-        //     // annoying hack needed because `self.get_entry` borrows &self (even though it doesn't use `self.filtered`)
-        //     // this should get optimised away
-        //     let mut filtered = std::mem::take(&mut self.filtered); 
-        //
-        //     filtered.sort_by_key(|&entry| 
-        //         std::cmp::Reverse(self.usage.get((entry.0, self.get_entry(entry).name())))
-        //     );
-        //     self.filtered = filtered;
-        // }
+        // primary sort ranks by usage
+        if frequency_sort {
+            entries.sort_by_key(|LabelledEntry { entry, plugin_index }|
+                std::cmp::Reverse(self.usage.get((&self.plugins[plugin_index.0].name, &entry.name)))
+            );
+        }
 
         // secondary sort puts best match at the top (stable = keeps relative order of elements)
         entries.sort_by_key(|entry| std::cmp::Reverse(entry.entry.score));
@@ -128,12 +124,17 @@ impl PluginManager {
 
     /// `selected` contains the `plugin_idx` field of a `LabelledEntry`, and the `index` field of an `Entry`
     pub fn launch(&mut self, config: &Config, query: &str, selected: Option<(PluginIndex, usize)>) -> Action {
-        if let Some((_, current)) = &mut self.current {
+        if let Some((plug, current)) = &mut self.current {
+            if let Some((_, index)) = selected {
+                self.usage.add_use((&self.plugins[plug.0].name, current.get_name(index)));
+            }
+
             current.send_enter(config, query, selected.map(|s| s.1))
-        } else if let Some(selected) = selected {
-            self.default_plugins.iter_mut().find(|(idx, _)| *idx == selected.0)
-                .map(|(_, execution)| execution.send_enter(config, query, Some(selected.1)))
-                .unwrap_or(Action::None)
+        } else if let Some((plugin_index, index)) = selected {
+            if let Some((_, execution)) = self.default_plugins.iter_mut().find(|(idx, _)| *idx == plugin_index) {
+                self.usage.add_use((&self.plugins[plugin_index.0].name, execution.get_name(index)));
+                execution.send_enter(config, query, Some(index))
+            } else { Action::None }
         } else { Action::None }
     }
 

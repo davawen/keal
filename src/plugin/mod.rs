@@ -33,6 +33,9 @@ pub trait PluginExecution {
     /// this should return an iterator of entries to avoid unnecessary allocations.
     /// which means implementations of this method should be ready to switch to `impl Iterator<Item = Entry<'a>>`
     fn get_entries<'a>(&'a self, config: &Config, matcher: &mut Matcher, pattern: &Pattern) -> Vec<Entry<'a>>;
+
+    /// temporary fix for usage frequency: get the name of an entry
+    fn get_name(&self, index: usize) -> &str;
 }
 
 #[must_use]
