@@ -1,5 +1,6 @@
 use std::str::CharIndices;
 
+use nucleo_matcher::{Matcher, pattern::Pattern, Utf32Str};
 
 pub struct MatchSpan<'a> {
     pub item: &'a str,
@@ -8,6 +9,27 @@ pub struct MatchSpan<'a> {
     pub index: u32,
     pub byte_offset: usize,
     pub chars: CharIndices<'a>
+}
+
+impl<'a> MatchSpan<'a> {
+    pub fn new(item: &'a str, matcher: &mut Matcher, pattern: &Pattern, charbuf: &mut Vec<char>) -> Self {
+        let mut indices = vec![];
+        pattern.indices(Utf32Str::new(item, charbuf), matcher, &mut indices);
+        indices.sort_unstable();
+        indices.dedup();
+
+        let mut chars = item.char_indices();
+        chars.next(); // advance char iterator to match the state of MatchSpan
+
+        MatchSpan {
+            item,
+            matched: indices,
+            matched_index: 0,
+            byte_offset: 0,
+            index: 0,
+            chars
+        }
+    }
 }
 
 impl<'a> Iterator for MatchSpan<'a> {

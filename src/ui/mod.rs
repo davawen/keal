@@ -4,12 +4,15 @@ use fork::{fork, Fork};
 use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
 use nucleo_matcher::{Matcher, pattern::{Pattern, CaseMatching}};
 
-use crate::{entries::{Entries, Action}, icon::{IconCache, Icon}, config::Config};
+use crate::{icon::{IconCache, Icon}, config::Config, plugin::{PluginManager, Action, PluginIndex, entry::LabelledEntry}};
 
 pub use styled::Theme;
 use styled::{ButtonStyle, TextStyle};
 
+use self::match_span::MatchSpan;
+
 mod styled;
+mod match_span;
 
 pub struct Keal {
     // UI state
@@ -17,18 +20,19 @@ pub struct Keal {
     selected: usize,
 
     // data state
-    query: Pattern,
+    query: String,
+    pattern: Pattern,
     matcher: RefCell<Matcher>,
     icons: IconCache,
     config: Config,
-    entries: Entries
+    manager: PluginManager
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     FontLoaded(Result<(), font::Error>),
     TextInput(String),
-    Launch(usize),
+    Launch(Option<(PluginIndex, usize)>),
     Event(keyboard::Event),
     IconCacheLoaded(IconCache)
 }
@@ -36,7 +40,7 @@ pub enum Message {
 // TODO: fuzzel-like often launched applications
 
 #[derive(Default)]
-pub struct Flags(pub Config, pub Entries);
+pub struct Flags(pub Config, pub PluginManager);
 
 impl Application for Keal {
     type Message = Message;
@@ -44,7 +48,7 @@ impl Application for Keal {
     type Executor = executor::Default;
     type Flags = Flags;
 
-    fn new(Flags(config, entries): Self::Flags) -> (Self, iced::Command<Self::Message>) {
+    fn new(Flags(config, manager): Self::Flags) -> (Self, iced::Command<Self::Message>) {
         let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
         let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
@@ -57,18 +61,16 @@ impl Application for Keal {
 
         let command = Command::batch(vec![iosevka, focus, load_icons]);
 
-        let mut this = Keal {
+        (Keal {
             input: String::new(),
             selected: 0,
-            query: Pattern::default(),
+            query: String::new(),
+            pattern: Pattern::default(),
             matcher: Matcher::default().into(),
             icons: IconCache::default(),
             config,
-            entries
-        };
-        this.filter();
-
-        (this, command)
+            manager
+        }, command)
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
@@ -87,9 +89,11 @@ impl Application for Keal {
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
+        let entries = self.get_entries();
+
         let input = text_input(&self.config.placeholder_text, &self.input)
             .on_input(Message::TextInput)
-            .on_submit(Message::Launch(self.selected))
+            .on_submit(Message::Launch(entries.get(self.selected).map(|e| (e.plugin_index, e.entry.index))))
             .size(self.config.font_size * 1.25).padding(self.config.font_size)
             .id(text_input::Id::new("query_input"));
 
@@ -100,12 +104,12 @@ impl Application for Keal {
         let mut buf = vec![];
 
         let entries = scrollable(icolumn({
-            self.entries.iter().enumerate().map(|(index, entry)| {
+            entries.into_iter().enumerate().map(|(index, LabelledEntry { entry, plugin_index })| {
                 let selected = self.selected == index;
 
                 let mut item = irow(vec![]);
 
-                if let Some(icon) = entry.icon() {
+                if let Some(icon) = entry.icon {
                     if let Some(icon) = self.icons.get(icon) {
                         let element: Element<_, _> = match icon {
                             Icon::Svg(path) => svg(svg::Handle::from_path(path)).width(self.config.font_size).height(self.config.font_size).into(),
@@ -115,7 +119,7 @@ impl Application for Keal {
                     }
                 }
 
-                for (span, highlighted) in entry.fuzzy_match_span(&mut matcher, &self.query, &mut buf) {
+                for (span, highlighted) in MatchSpan::new(entry.name, &mut matcher, &self.pattern, &mut buf) {
                     item = item.push(text(span).size(self.config.font_size).style(
                         match highlighted {
                             false => TextStyle::Normal,
@@ -125,7 +129,7 @@ impl Application for Keal {
                 }
 
                 item = item.push(Space::with_width(Length::Fill)); // fill the whole line up
-                if let Some(comment) = entry.comment() {
+                if let Some(comment) = entry.comment {
                     item = item.push(Space::with_width(5.0)); // minimum amount of space between name and comment
                     item = item.push(
                         text(comment)
@@ -135,7 +139,7 @@ impl Application for Keal {
                 }
 
                 button(item)
-                    .on_press(Message::Launch(index))
+                    .on_press(Message::Launch(Some((plugin_index, entry.index))))
                     .style(if selected { ButtonStyle::Selected } else { ButtonStyle::Normal })
                     .padding([10, 20, 10, 10])
             })
@@ -160,7 +164,8 @@ impl Application for Keal {
                 // TODO: gently scroll window to selected choice
                 KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::N, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
                     self.selected += 1;
-                    self.selected = self.selected.min(self.entries.filtered.len().saturating_sub(1));
+                    // FIXME: this is annoying...
+                    // self.selected = self.selected.min(self.entries.filtered.len().saturating_sub(1));
                 }
                 KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::P, modifiers: Modifiers::CTRL }
                 | KeyPressed { key_code: KeyCode::Up, .. } => {
@@ -169,7 +174,7 @@ impl Application for Keal {
                 _ => ()
             }
             Message::Launch(selected) => {
-                let action = self.entries.launch(&self.input, &self.config, selected);
+                let action = self.manager.launch(&self.config, &self.query, selected);
                 return self.handle_action(action);
             }
             Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache
@@ -183,28 +188,28 @@ impl Keal {
     pub fn update_input(&mut self, input: String, from_user: bool) -> Command<Message> {
         self.input = input;
 
-        let (query, action) = self.entries.update_input(&self.input, from_user);
-        self.query.reparse(&query, CaseMatching::Ignore);
+        let (query, action) = self.manager.update_input(&self.config, &self.input, from_user);
+        self.pattern.reparse(&query, CaseMatching::Ignore);
+        self.query = query;
 
-        self.filter();
         self.handle_action(action)
     }
 
-    pub fn filter(&mut self) {
-        self.entries.filter(self.matcher.get_mut(), &self.query, 50, self.config.usage_frequency);
+    pub fn get_entries(&self) -> Vec<LabelledEntry> {
+        self.manager.get_entries(&self.config, &mut self.matcher.borrow_mut(), &self.pattern, 50, self.config.usage_frequency)
     }
 
     fn handle_action(&mut self, action: Action) -> Command<Message> {
         match action {
             Action::None => (),
             Action::ChangeInput(new) => {
-                self.entries.execution = None; // kill running plugin
+                self.manager.kill();
                 let c = self.update_input(new, false);
                 return Command::batch([c, text_input::move_cursor_to_end(text_input::Id::new("query_input"))]);
             }
             Action::ChangeQuery(new) => {
-                let new = self.entries.execution.as_ref()
-                    .map(|execution| format!("{} {}", execution.prefix, new))
+                let new = self.manager.current()
+                    .map(|plugin| format!("{} {}", plugin.prefix, new))
                     .unwrap_or(new);
 
                 let c = self.update_input(new, false);
@@ -223,22 +228,8 @@ impl Keal {
                 Fork::Child => ()
             }
             Action::WaitAndClose => {
-                if let Some(execution) = &mut self.entries.execution {
-                    let _ = execution.child.wait();
-                    return iced::window::close();
-                }
-            }
-            Action::Update(idx, entry) => {
-                if let Some(execution) = &mut self.entries.execution {
-                    execution.entries[idx] = entry;
-                    self.filter();
-                }
-            }
-            Action::UpdateAll(entries) => {
-                if let Some(execution) = &mut self.entries.execution {
-                    execution.entries = entries;
-                    self.filter()
-                }
+                self.manager.wait();
+                return iced::window::close();
             }
         }
 

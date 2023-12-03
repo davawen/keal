@@ -4,13 +4,12 @@ use arguments::Arguments;
 use iced::{Application, Settings, window, Font, font};
 use ui::Flags;
 
-mod entries;
-mod providers;
 mod ui;
 mod icon;
 mod config;
 mod xdg_utils;
 mod ini_parser;
+mod plugin;
 
 mod arguments;
 
@@ -24,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let config = config::Config::load();
-    let entries = entries::Entries::new(&arguments);
+    let manager = plugin::PluginManager::new(&arguments);
 
     ui::Keal::run(Settings {
         window: window::Settings {
@@ -42,7 +41,7 @@ fn main() -> anyhow::Result<()> {
             stretch: config.font_stretch,
             ..Default::default()
         },
-        flags: Flags(config, entries),
+        flags: Flags(config, manager),
         ..Default::default()
     })?;
 

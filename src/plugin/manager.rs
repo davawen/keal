@@ -1,0 +1,156 @@
+use indexmap::IndexMap;
+use nucleo_matcher::{Matcher, pattern::Pattern};
+
+use crate::{config::Config, arguments::Arguments};
+
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, entry::LabelledEntry};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginIndex(usize);
+
+#[derive(Default)]
+pub struct PluginManager {
+    /// the list of all loaded plugins
+    plugins: IndexMap<String, Plugin>,
+    /// plugins selected by default by the user that will show when no plugin prefix is typed
+    default_plugins: Vec<(PluginIndex, Box<dyn PluginExecution>)>,
+    /// if the user has typed a plugin prefix, then this will be the only plugin shown
+    /// usize is an index into `self.plugins`
+    current: Option<(PluginIndex, Box<dyn PluginExecution>)>
+}
+
+impl PluginManager {
+    pub fn new(arguments: &Arguments) -> Self {
+        if arguments.dmenu {
+            let dmenu = super::builtin::dmenu::DmenuPlugin::create(arguments.protocol);
+            let mut this = Self {
+                plugins: IndexMap::from_iter([
+                    (dmenu.prefix.clone(), dmenu)
+                ]),
+                default_plugins: vec![],
+                current: None
+            };
+
+            // add dmenu to default plugins at startup
+            this.add_default_plugin(0);
+            this
+        } else {
+            let mut this = Self {
+                plugins: get_user_plugins().into_iter().flatten().collect(),
+                default_plugins: vec![],
+                current: None
+            };
+
+            let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+            let applications = ApplicationPlugin::create(current_desktop);
+            this.plugins.insert(applications.prefix.clone(), applications);
+            this.add_default_plugin(this.plugins.len() - 1);
+
+            this
+        }
+    }
+
+    fn add_default_plugin(&mut self, index: usize) {
+        let plugin = self.plugins.get_index(index).unwrap().1;
+        self.default_plugins.push((PluginIndex(index), (plugin.generator)(plugin, self)));
+    }
+
+    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, frequency_sort: bool) -> Vec<LabelledEntry<'_>> {
+        let mut entries = vec![];
+        if let Some((idx, current)) = &self.current {
+            entries.extend(current.get_entries(config, matcher, pattern).into_iter().map(|e| e.label(*idx)));
+        } else {
+            for (idx, plug) in &self.default_plugins {
+                entries.extend(plug.get_entries(config, matcher, pattern).into_iter().map(|e| e.label(*idx)));
+            }
+        }
+
+        // // primary sort ranks by usage
+        // if frequency_sort {
+        //     // annoying hack needed because `self.get_entry` borrows &self (even though it doesn't use `self.filtered`)
+        //     // this should get optimised away
+        //     let mut filtered = std::mem::take(&mut self.filtered); 
+        //
+        //     filtered.sort_by_key(|&entry| 
+        //         std::cmp::Reverse(self.usage.get((entry.0, self.get_entry(entry).name())))
+        //     );
+        //     self.filtered = filtered;
+        // }
+
+        // secondary sort puts best match at the top (stable = keeps relative order of elements)
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.entry.score));
+        entries.truncate(n);
+
+        entries
+    }
+
+    /// Changes the input field to a new value
+    /// `from_user` describes wether this change originates from user interaction
+    /// Or wether it comes from a plugin action, (and should therefore not be propagated as an event, to avoid cycles).
+    /// Returns the actual query string, and the action that resulted from the input
+    pub fn update_input(&mut self, config: &Config, input: &str, from_user: bool) -> (String, Action) {
+        let filter_starts_with_plugin = if let Some((name, remainder)) = input.split_once(' ') {
+            self.plugins.get_full(name).map(|(idx, _, plugin)| ((PluginIndex(idx), plugin), remainder))
+        } else { None };
+
+        // launch or stop plugin execution depending on new state of filter
+        // if in plugin mode, remove plugin prefix from filter
+        let (query, action) = match (filter_starts_with_plugin, &mut self.current) {
+            (Some(((idx, plugin), remainder)), None) => { // launch plugin
+                let execution = (plugin.generator)(plugin, self);
+                self.current = Some((idx, execution));
+
+                (remainder.to_owned(), Action::None)
+            }
+            (Some(((idx, plugin), remainder)), Some((execution_idx, execution))) => {
+                let remainder = remainder.to_owned();
+
+                // relaunch plugin if it is done executing or if we're currently executing the wrong plugin
+                if execution.finished() || idx != *execution_idx {
+                    let execution = (plugin.generator)(plugin, self);
+                    self.current = Some((idx, execution));
+                } else if from_user { // send query event
+                    let action = execution.send_query(config, &remainder);
+                    return (remainder, action);
+                }
+
+                (remainder, Action::None)
+            }
+            (None, Some(_)) => { // stop plugin
+                self.current = None;
+                (input.to_owned(), Action::None)
+            }
+            (None, None) => (input.to_owned(), Action::None)
+        };
+
+        (query, action)
+    }
+
+    /// `selected` contains the `plugin_idx` field of a `LabelledEntry`, and the `index` field of an `Entry`
+    pub fn launch(&mut self, config: &Config, query: &str, selected: Option<(PluginIndex, usize)>) -> Action {
+        if let Some((_, current)) = &mut self.current {
+            current.send_enter(config, query, selected.map(|s| s.1))
+        } else if let Some(selected) = selected {
+            self.default_plugins.iter_mut().find(|(idx, _)| *idx == selected.0)
+                .map(|(_, execution)| execution.send_enter(config, query, Some(selected.1)))
+                .unwrap_or(Action::None)
+        } else { Action::None }
+    }
+
+    /// kills current running plugin
+    pub fn kill(&mut self) {
+        self.current = None;
+    }
+
+    /// gets the plugin reference of the currently running execution
+    pub fn current(&self) -> Option<&Plugin> {
+        self.current.as_ref().map(|(idx, _)| self.plugins.get_index(idx.0).unwrap().1)
+    }
+
+    /// wait for the current plugin to finish executing
+    pub fn wait(&mut self) {
+        if let Some((_, execution)) = &mut self.current {
+            execution.wait();
+        }
+    }
+}
