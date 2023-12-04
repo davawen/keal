@@ -192,11 +192,14 @@ impl PluginExecution for UserPlugin {
         self.get_action()
     }
 
-    fn get_entries<'a>(&'a self, _: &Config, matcher: &mut Matcher, pattern: &Pattern) -> Vec<Entry<'a>> {
+    fn get_entries<'a>(&'a self, _: &Config, matcher: &mut Matcher, pattern: &Pattern, out: &mut Vec<Entry<'a>>) {
         let mut charbuf = vec![];
-        self.entries.iter().enumerate().flat_map(|(index, entry)| {
-            Entry::new(matcher, pattern, &mut charbuf, &entry.name, entry.icon.as_ref(), entry.comment.as_deref(), index)
-        }).collect()
+        for (index, entry) in self.entries.iter().enumerate() {
+            let Some(entry) = Entry::new(matcher, pattern, &mut charbuf, &entry.name, entry.icon.as_ref(), entry.comment.as_deref(), index)
+                else { continue };
+
+            out.push(entry);
+        }
     }
 
     fn get_name(&self, index: usize) -> &str {

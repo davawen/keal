@@ -3,7 +3,7 @@ use std::{path::Path, process};
 use nucleo_matcher::{Matcher, pattern::Pattern, Utf32Str, Utf32String};
 use walkdir::WalkDir;
 
-use crate::{icon::{IconPath, Icon}, ini_parser::Ini, plugin::{Plugin, PluginExecution, Entry, Action}, xdg_utils::xdg_directories, config::Config};
+use crate::{icon::{IconPath, Icon}, ini_parser::Ini, plugin::{Plugin, PluginExecution, Entry, Action, entry::Label}, xdg_utils::xdg_directories, config::Config};
 
 #[derive(Debug)]
 struct DesktopEntry {
@@ -167,24 +167,27 @@ impl PluginExecution for ApplicationPlugin {
         Action::Exec(command)
     }
 
-    fn get_entries<'a>(&'a self, _: &Config, matcher: &mut Matcher, pattern: &Pattern) -> Vec<Entry<'a>> {
+    fn get_entries<'a>(&'a self, _: &Config, matcher: &mut Matcher, pattern: &Pattern, out: &mut Vec<Entry<'a>>) {
         let mut charbuf = vec![];
 
-        self.0.iter().enumerate().flat_map(|(index, entry)| {
+        for (index, entry) in self.0.iter().enumerate() {
             let a = pattern.score(Utf32Str::new(&entry.name, &mut charbuf), matcher);
             let b = entry.comment.as_ref().and_then(|c| pattern.score(Utf32Str::new(c, &mut charbuf), matcher));
             let c = pattern.score(entry.to_match.slice(..), matcher);
 
             let score = a.map(|a| b.map(|b| a + b).unwrap_or(a)).or(b)
-                .map(|a_b| c.map(|c| a_b + c).unwrap_or(a_b)).or(c)?;
+                .map(|a_b| c.map(|c| a_b + c).unwrap_or(a_b)).or(c);
 
-            Some(Entry {
+            let Some(score) = score else { continue };
+
+            out.push(Entry {
                 name: &entry.name,
                 icon: entry.icon.as_ref(),
                 comment: entry.comment.as_deref(),
-                score, index
+                score,
+                label: Label::index(index)
             })
-        }).collect()
+        }
     }
 
     fn get_name(&self, index: usize) -> &str {

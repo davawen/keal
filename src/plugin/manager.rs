@@ -3,9 +3,9 @@ use nucleo_matcher::{Matcher, pattern::Pattern};
 
 use crate::{config::Config, arguments::Arguments};
 
-use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, entry::LabelledEntry, usage::Usage};
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, usage::Usage, entry::{Entry, Label}};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PluginIndex(usize);
 
 #[derive(Default)]
@@ -56,25 +56,28 @@ impl PluginManager {
         self.default_plugins.push((PluginIndex(index), (plugin.generator)(plugin, self)));
     }
 
-    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, frequency_sort: bool) -> Vec<LabelledEntry<'_>> {
+    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, frequency_sort: bool) -> Vec<Entry<'_>> {
         let mut entries = vec![];
+        let mut buf = vec![];
         if let Some((idx, current)) = &self.current {
-            entries.extend(current.get_entries(config, matcher, pattern).into_iter().map(|e| e.label(*idx)));
+            current.get_entries(config, matcher, pattern, &mut buf);
+            entries.extend(buf.drain(..).map(|e| e.label(*idx)));
         } else {
             for (idx, plug) in &self.default_plugins {
-                entries.extend(plug.get_entries(config, matcher, pattern).into_iter().map(|e| e.label(*idx)));
+                plug.get_entries(config, matcher, pattern, &mut buf);
+                entries.extend(buf.drain(..).map(|e| e.label(*idx)));
             }
         }
 
         // primary sort ranks by usage
         if frequency_sort {
-            entries.sort_by_key(|LabelledEntry { entry, plugin_index }|
-                std::cmp::Reverse(self.usage.get((&self.plugins[plugin_index.0].name, &entry.name)))
+            entries.sort_by_key(|entry|
+                std::cmp::Reverse(self.usage.get((&self.plugins[entry.label.plugin_index.0].name, &entry.name)))
             );
         }
 
         // secondary sort puts best match at the top (stable = keeps relative order of elements)
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.entry.score));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.score));
         entries.truncate(n);
 
         entries
@@ -123,14 +126,14 @@ impl PluginManager {
     }
 
     /// `selected` contains the `plugin_idx` field of a `LabelledEntry`, and the `index` field of an `Entry`
-    pub fn launch(&mut self, config: &Config, query: &str, selected: Option<(PluginIndex, usize)>) -> Action {
+    pub fn launch(&mut self, config: &Config, query: &str, selected: Option<Label>) -> Action {
         if let Some((plug, current)) = &mut self.current {
-            if let Some((_, index)) = selected {
+            if let Some(Label { index, .. }) = selected {
                 self.usage.add_use((&self.plugins[plug.0].name, current.get_name(index)));
             }
 
-            current.send_enter(config, query, selected.map(|s| s.1))
-        } else if let Some((plugin_index, index)) = selected {
+            current.send_enter(config, query, selected.map(|s| s.index))
+        } else if let Some(Label { plugin_index, index }) = selected {
             if let Some((_, execution)) = self.default_plugins.iter_mut().find(|(idx, _)| *idx == plugin_index) {
                 self.usage.add_use((&self.plugins[plugin_index.0].name, execution.get_name(index)));
                 execution.send_enter(config, query, Some(index))

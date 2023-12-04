@@ -29,17 +29,16 @@ pub trait PluginExecution {
     fn send_query(&mut self, config: &Config, query: &str) -> Action;
     fn send_enter(&mut self, config: &Config, query: &str, idx: Option<usize>) -> Action;
 
-    /// TODO: once "impl trait in return position in traits" is stable,
-    /// this should return an iterator of entries to avoid unnecessary allocations.
-    /// which means implementations of this method should be ready to switch to `impl Iterator<Item = Entry<'a>>`
-    fn get_entries<'a>(&'a self, config: &Config, matcher: &mut Matcher, pattern: &Pattern) -> Vec<Entry<'a>>;
+    fn get_entries<'a>(&'a self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, out: &mut Vec<Entry<'a>>);
 
     /// temporary fix for usage frequency: get the name of an entry
     fn get_name(&self, index: usize) -> &str;
 }
 
 #[must_use]
+#[derive(Default)]
 pub enum Action {
+    #[default]
     None,
     // Universal
     ChangeInput(String),

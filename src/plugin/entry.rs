@@ -4,22 +4,39 @@ use crate::icon::IconPath;
 
 use super::PluginIndex;
 
-/// Returned by the plugin manager to the UI
-/// Specifies from which plugin the entry comes from
-pub struct LabelledEntry<'a> {
-    pub entry: Entry<'a>,
-    pub plugin_index: PluginIndex
-}
-
 /// Returned by plugins to the plugin manager
+#[derive(Debug)]
 pub struct Entry<'a> {
     pub name: &'a str,
     pub icon: Option<&'a IconPath>,
     pub comment: Option<&'a str>,
     /// fuzzy matching score
     pub score: u32,
+    pub label: Label
+}
+
+/// Specifies the origin of the entry
+#[derive(Debug, Clone, Copy)]
+pub struct Label {
+    /// plugin it comes from
+    pub plugin_index: PluginIndex,
     /// index in the plugin itself
     pub index: usize
+}
+
+impl Label {
+    /// Creates a new label from an inner index, with a null plugin index
+    pub fn index(index: usize) -> Self {
+        Self {
+            index, plugin_index: PluginIndex::default()
+        }
+    }
+
+    pub fn with_plugin(self, plugin_index: PluginIndex) -> Self {
+        Self {
+            index: self.index, plugin_index
+        }
+    }
 }
 
 impl<'a> Entry<'a> {
@@ -30,11 +47,14 @@ impl<'a> Entry<'a> {
         let b = comment.and_then(|comment| pattern.score(Utf32Str::new(comment, charbuf), matcher));
         let score = a.map(|a| b.map(|b| a + b).unwrap_or(a)).or(b)?;
 
-        Some(Self { name, icon, comment, score, index })
+        Some(Self { name, icon, comment, score, label: Label::index(index) })
     }
     
-    pub fn label(self, plugin_index: PluginIndex) -> LabelledEntry<'a> {
-        LabelledEntry { entry: self, plugin_index }
+    pub fn label(self, plugin_index: PluginIndex) -> Self {
+        Self { 
+            label: self.label.with_plugin(plugin_index),
+            ..self
+        }
     }
 }
 
