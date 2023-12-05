@@ -39,17 +39,15 @@ pub enum Message {
 
 pub struct Flags(pub &'static Config, pub PluginManager);
 
-impl Default for Flags {
-    fn default() -> Self { unreachable!("cannot launch keal without providing flags") }
-}
-
 impl Application for Keal {
     type Message = Message;
     type Theme = Theme;
     type Executor = executor::Default;
-    type Flags = Flags;
+    type Flags = Option<Flags>;
 
-    fn new(Flags(config, manager): Self::Flags) -> (Self, iced::Command<Self::Message>) {
+    fn new(flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
+        let Some(Flags(config, manager)) = flags else { unreachable!() };
+
         let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
         let iosevka = include_bytes!("../../public/iosevka-regular.ttf");

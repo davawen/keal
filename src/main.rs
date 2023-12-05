@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
             stretch: config.font_stretch,
             ..Default::default()
         },
-        flags: Flags(config, manager),
+        flags: Some(Flags(config, manager)),
         ..Default::default()
     })?;
 
