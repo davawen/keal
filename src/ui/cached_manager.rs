@@ -2,18 +2,17 @@ use std::{rc::Rc, cell::RefCell};
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{plugin::{PluginManager, entry::OwnedEntry}, config::Config};
+use crate::{plugin::{PluginManager, entry::{OwnedEntry, Label}}, config::Config};
 
 
 
 /// This handles caching the entries collected by the plugin manager.
-/// It requires a bit of unsafe madness, since it's in essence a self referential struct.
 pub struct CachedManager {
     manager: PluginManager,
-    entries:Vec<OwnedEntry>,
+    entries: Vec<OwnedEntry>,
 
     // data used to regenerate entries
-    config: Rc<Config>,
+    config: &'static Config,
     matcher: Rc<RefCell<Matcher>>,
     num_entries: usize,
     sort_by_usage: bool,
@@ -22,11 +21,11 @@ pub struct CachedManager {
 
 impl CachedManager {
     fn regenerate_entries(&mut self) {
-        self.entries = self.manager.get_entries(&self.config, &mut self.matcher.borrow_mut(), &self.pattern, self.num_entries, self.sort_by_usage);
+        self.entries = self.manager.get_entries(self.config, &mut self.matcher.borrow_mut(), &self.pattern, self.num_entries, self.sort_by_usage);
     }
 
-    pub fn new(manager: PluginManager, config: Rc<Config>, matcher: Rc<RefCell<Matcher>>, num_entries: usize, sort_by_usage: bool) -> Self {
-        let entries = manager.get_entries(&config, &mut matcher.borrow_mut(), &Pattern::default(), 50, sort_by_usage);
+    pub fn new(manager: PluginManager, config: &'static Config, matcher: Rc<RefCell<Matcher>>, num_entries: usize, sort_by_usage: bool) -> Self {
+        let entries = manager.get_entries(config, &mut matcher.borrow_mut(), &Pattern::default(), 50, sort_by_usage);
         Self {
             entries,
             manager,

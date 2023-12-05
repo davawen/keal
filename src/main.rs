@@ -23,6 +23,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     let config = config::Config::load();
+    let config = Box::leak(Box::new(config));
+
     let manager = plugin::PluginManager::new(&arguments);
 
     ui::Keal::run(Settings {

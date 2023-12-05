@@ -22,7 +22,7 @@ pub struct Keal {
 
     // data state
     query: String,
-    config: Rc<Config>,
+    config: &'static Config,
     matcher: Rc<RefCell<Matcher>>,
     icons: IconCache,
     manager: CachedManager
@@ -37,8 +37,11 @@ pub enum Message {
     IconCacheLoaded(IconCache)
 }
 
-#[derive(Default)]
-pub struct Flags(pub Config, pub PluginManager);
+pub struct Flags(pub &'static Config, pub PluginManager);
+
+impl Default for Flags {
+    fn default() -> Self { unreachable!("cannot launch keal without providing flags") }
+}
 
 impl Application for Keal {
     type Message = Message;
@@ -59,9 +62,8 @@ impl Application for Keal {
 
         let command = Command::batch(vec![iosevka, focus, load_icons]);
 
-        let config = Rc::new(config);
         let matcher = Rc::new(RefCell::new(Matcher::default()));
-        let manager = CachedManager::new(manager, config.clone(), matcher.clone(), 50, true);
+        let manager = CachedManager::new(manager, config, matcher.clone(), 50, true);
 
         (Keal {
             input: String::new(),
@@ -174,7 +176,7 @@ impl Application for Keal {
                 _ => ()
             }
             Message::Launch(selected) => {
-                let action = self.manager.use_manager(|m| m.launch(&self.config, &self.query, selected));
+                let action = self.manager.use_manager(|m| m.launch(self.config, &self.query, selected));
                 return self.handle_action(action);
             }
             Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache
@@ -189,7 +191,7 @@ impl Keal {
         self.input = input;
 
         let (query, action) = self.manager.modify_pattern(|manager, pattern| {
-            let (query, action) = manager.update_input(&self.config, &self.input, from_user);
+            let (query, action) = manager.update_input(self.config, &self.input, from_user);
             pattern.reparse(&query, CaseMatching::Ignore);
             (query, action)
         });
