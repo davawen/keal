@@ -15,7 +15,7 @@ mod styled;
 mod match_span;
 mod cached_manager;
 
-pub struct Keal<'a> {
+pub struct Keal {
     // UI state
     input: String,
     selected: usize,
@@ -25,7 +25,7 @@ pub struct Keal<'a> {
     config: Rc<Config>,
     matcher: Rc<RefCell<Matcher>>,
     icons: IconCache,
-    manager: CachedManager<'a>
+    manager: CachedManager
 }
 
 #[derive(Debug, Clone)]
@@ -40,7 +40,7 @@ pub enum Message {
 #[derive(Default)]
 pub struct Flags(pub Config, pub PluginManager);
 
-impl Application for Keal<'_> {
+impl Application for Keal {
     type Message = Message;
     type Theme = Theme;
     type Executor = executor::Default;
@@ -110,7 +110,7 @@ impl Application for Keal<'_> {
 
                 let mut item = irow(vec![]);
 
-                if let Some(icon) = entry.icon {
+                if let Some(icon) = &entry.icon {
                     if let Some(icon) = self.icons.get(icon) {
                         let element: Element<_, _> = match icon {
                             Icon::Svg(path) => svg(svg::Handle::from_path(path)).width(self.config.font_size).height(self.config.font_size).into(),
@@ -120,7 +120,7 @@ impl Application for Keal<'_> {
                     }
                 }
 
-                for (span, highlighted) in MatchSpan::new(entry.name, &mut matcher, self.manager.pattern(), &mut buf) {
+                for (span, highlighted) in MatchSpan::new(&entry.name, &mut matcher, self.manager.pattern(), &mut buf) {
                     item = item.push(text(span).size(self.config.font_size).style(
                         match highlighted {
                             false => TextStyle::Normal,
@@ -130,7 +130,7 @@ impl Application for Keal<'_> {
                 }
 
                 item = item.push(Space::with_width(Length::Fill)); // fill the whole line up
-                if let Some(comment) = entry.comment {
+                if let Some(comment) = &entry.comment {
                     item = item.push(Space::with_width(5.0)); // minimum amount of space between name and comment
                     item = item.push(
                         text(comment)
@@ -184,7 +184,7 @@ impl Application for Keal<'_> {
     }
 }
 
-impl Keal<'_> {
+impl Keal {
     pub fn update_input(&mut self, input: String, from_user: bool) -> Command<Message> {
         self.input = input;
 

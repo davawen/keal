@@ -1,16 +1,16 @@
-use std::{mem::MaybeUninit, rc::Rc, cell::RefCell};
+use std::{rc::Rc, cell::RefCell};
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{plugin::{PluginManager, entry::Entry}, config::Config};
+use crate::{plugin::{PluginManager, entry::OwnedEntry}, config::Config};
 
 
 
 /// This handles caching the entries collected by the plugin manager.
 /// It requires a bit of unsafe madness, since it's in essence a self referential struct.
-pub struct CachedManager<'a> {
+pub struct CachedManager {
     manager: PluginManager,
-    entries: MaybeUninit<Vec<Entry<'a>>>,
+    entries:Vec<OwnedEntry>,
 
     // data used to regenerate entries
     config: Rc<Config>,
@@ -20,24 +20,19 @@ pub struct CachedManager<'a> {
     pattern: Pattern
 }
 
-impl<'a> CachedManager<'a> {
+impl CachedManager {
     fn regenerate_entries(&mut self) {
-        // this decouples the lifetime of `entries` from `manager`
-        // SAFETY: Plugins hold the data of entries
-        // The plugins are held by a hash map
-        // Thus its fine to move `PluginManager` since all the data that entries point to live on the heap
-        let decoupled = unsafe { &mut *( &mut self.manager as *mut PluginManager ) };
-        self.entries = MaybeUninit::new(decoupled.get_entries(&self.config, &mut self.matcher.borrow_mut(), &self.pattern, self.num_entries, self.sort_by_usage));
+        self.entries = self.manager.get_entries(&self.config, &mut self.matcher.borrow_mut(), &self.pattern, self.num_entries, self.sort_by_usage);
     }
 
     pub fn new(manager: PluginManager, config: Rc<Config>, matcher: Rc<RefCell<Matcher>>, num_entries: usize, sort_by_usage: bool) -> Self {
-        let mut this = Self {
-            manager, entries: MaybeUninit::uninit(),
+        let entries = manager.get_entries(&config, &mut matcher.borrow_mut(), &Pattern::default(), 50, sort_by_usage);
+        Self {
+            entries,
+            manager,
             config, matcher, num_entries, sort_by_usage,
             pattern: Pattern::default()
-        };
-        this.regenerate_entries();
-        this
+        }
     }
 
     /// Use the plugin manager mutably
@@ -62,8 +57,7 @@ impl<'a> CachedManager<'a> {
     pub fn manager(&self) -> &PluginManager { &self.manager }
 
     /// Borrow entries immutably
-    pub fn entries(&self) -> &[Entry] {
-        // SAFETY: `self.entries` is initialized on `new`, and cannot be set back to uninit from there.
-        unsafe { self.entries.assume_init_ref() }
+    pub fn entries(&self) -> &[OwnedEntry] {
+        &self.entries
     }
 }

@@ -3,7 +3,7 @@ use nucleo_matcher::{Matcher, pattern::Pattern};
 
 use crate::{config::Config, arguments::Arguments};
 
-use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, usage::Usage, entry::{Entry, Label}};
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PluginIndex(usize);
@@ -56,7 +56,7 @@ impl PluginManager {
         self.default_plugins.push((PluginIndex(index), (plugin.generator)(plugin, self)));
     }
 
-    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_frequency: bool) -> Vec<Entry<'_>> {
+    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_usage: bool) -> Vec<OwnedEntry> {
         let mut entries = vec![];
         let mut buf = vec![];
         if let Some((idx, current)) = &self.current {
@@ -70,7 +70,7 @@ impl PluginManager {
         }
 
         // primary sort ranks by usage
-        if sort_by_frequency {
+        if sort_by_usage {
             entries.sort_by_key(|entry|
                 std::cmp::Reverse(self.usage.get((&self.plugins[entry.label.plugin_index.0].name, &entry.name)))
             );
@@ -80,7 +80,9 @@ impl PluginManager {
         entries.sort_by_key(|entry| std::cmp::Reverse(entry.score));
         entries.truncate(n);
 
-        entries
+        // this clones the value of only the top keys, which should incur pretty minimal performance loss
+        // in response, it allows putting plugins in an async future, which is a much bigger win than a few avoided clones
+        entries.into_iter().map(|e| e.to_owned()).collect()
     }
 
     /// Changes the input field to a new value

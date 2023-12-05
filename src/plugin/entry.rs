@@ -15,6 +15,16 @@ pub struct Entry<'a> {
     pub label: Label
 }
 
+#[derive(Debug)]
+pub struct OwnedEntry {
+    pub name: String,
+    pub icon: Option<IconPath>,
+    pub comment: Option<String>,
+    /// fuzzy matching score
+    pub score: u32,
+    pub label: Label
+}
+
 /// Specifies the origin of the entry
 #[derive(Debug, Clone, Copy)]
 pub struct Label {
@@ -25,17 +35,12 @@ pub struct Label {
 }
 
 impl Label {
-    /// Creates a new label from an inner index, with a null plugin index
     pub fn index(index: usize) -> Self {
-        Self {
-            index, plugin_index: PluginIndex::default()
-        }
+        Self { plugin_index: PluginIndex::default(), index }
     }
 
-    pub fn with_plugin(self, plugin_index: PluginIndex) -> Self {
-        Self {
-            index: self.index, plugin_index
-        }
+    fn with_plugin(self, plugin_index: PluginIndex) -> Self {
+        Self { plugin_index, index: self.index }
     }
 }
 
@@ -49,11 +54,21 @@ impl<'a> Entry<'a> {
 
         Some(Self { name, icon, comment, score, label: Label::index(index) })
     }
-    
+
     pub fn label(self, plugin_index: PluginIndex) -> Self {
-        Self { 
+        Self {
             label: self.label.with_plugin(plugin_index),
             ..self
+        }
+    }
+    
+    pub fn to_owned(&self) -> OwnedEntry {
+        OwnedEntry {
+            name: self.name.to_owned(),
+            icon: self.icon.cloned(),
+            comment: self.comment.map(str::to_owned),
+            score: self.score,
+            label: self.label
         }
     }
 }
