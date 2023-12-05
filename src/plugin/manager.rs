@@ -56,7 +56,7 @@ impl PluginManager {
         self.default_plugins.push((PluginIndex(index), (plugin.generator)(plugin, self)));
     }
 
-    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, frequency_sort: bool) -> Vec<Entry<'_>> {
+    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_frequency: bool) -> Vec<Entry<'_>> {
         let mut entries = vec![];
         let mut buf = vec![];
         if let Some((idx, current)) = &self.current {
@@ -70,7 +70,7 @@ impl PluginManager {
         }
 
         // primary sort ranks by usage
-        if frequency_sort {
+        if sort_by_frequency {
             entries.sort_by_key(|entry|
                 std::cmp::Reverse(self.usage.get((&self.plugins[entry.label.plugin_index.0].name, &entry.name)))
             );
