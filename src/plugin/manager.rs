@@ -133,6 +133,12 @@ impl PluginManager {
             }
 
             current.send_enter(config, query, selected.map(|s| s.index))
+        } else if self.default_plugins.len() == 1 {
+            let (plugin_index, plug) = &mut self.default_plugins[0];
+            if let Some(Label { index, .. }) = selected {
+                self.usage.add_use((&self.plugins[plugin_index.0].name, plug.get_name(index)));
+            }
+            plug.send_enter(config, query, selected.map(|s| s.index))
         } else if let Some(Label { plugin_index, index }) = selected {
             if let Some((_, execution)) = self.default_plugins.iter_mut().find(|(idx, _)| *idx == plugin_index) {
                 self.usage.add_use((&self.plugins[plugin_index.0].name, execution.get_name(index)));
