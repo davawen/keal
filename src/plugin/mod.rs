@@ -11,7 +11,7 @@ mod usage;
 use self::entry::Entry;
 pub use self::manager::{PluginManager, PluginIndex};
 
-pub type PluginGenerator = Box<dyn Fn(&Plugin, &PluginManager) -> Box<dyn PluginExecution>>;
+pub type PluginGenerator = Box<dyn Fn(&Plugin, &PluginManager) -> Box<dyn PluginExecution> + Send>;
 pub struct Plugin {
     pub name: String,
     pub icon: Option<IconPath>,
@@ -20,7 +20,7 @@ pub struct Plugin {
     pub generator: PluginGenerator
 }
 
-pub trait PluginExecution {
+pub trait PluginExecution: Send {
     /// The plugin is done executing
     fn finished(&mut self) -> bool;
     /// Wait for the plugin to finish executing
@@ -36,7 +36,7 @@ pub trait PluginExecution {
 }
 
 #[must_use]
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub enum Action {
     #[default]
     None,
@@ -44,10 +44,32 @@ pub enum Action {
     ChangeInput(String),
     ChangeQuery(String),
     // Desktop file related
-    Exec(process::Command),
+    Exec(ClonableCommand),
     // Dmenu related
     PrintAndClose(String),
     // Plugin related
     Fork,
     WaitAndClose
+}
+
+#[derive(Debug)]
+pub struct ClonableCommand(pub process::Command);
+
+impl From<process::Command> for ClonableCommand {
+    fn from(value: process::Command) -> Self { Self(value) }
+}
+
+impl Clone for ClonableCommand {
+    fn clone(&self) -> Self {
+        let mut c = process::Command::new(self.0.get_program());
+
+        c.args(self.0.get_args())
+            .envs(self.0.get_envs().flat_map(|e| Some((e.0, e.1?))));
+
+        if let Some(dir) = self.0.get_current_dir() {
+            c.current_dir(dir);
+        }
+
+        c.into()
+    }
 }

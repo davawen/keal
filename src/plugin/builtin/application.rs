@@ -164,7 +164,7 @@ impl PluginExecution for ApplicationPlugin {
         if let Some(path) = &app.path {
             command.current_dir(path);
         }
-        Action::Exec(command)
+        Action::Exec(command.into())
     }
 
     fn get_entries<'a>(&'a self, _: &Config, matcher: &mut Matcher, pattern: &Pattern, out: &mut Vec<Entry<'a>>) {

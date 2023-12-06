@@ -15,7 +15,7 @@ pub struct Entry<'a> {
     pub label: Label
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OwnedEntry {
     pub name: String,
     pub icon: Option<IconPath>,

@@ -1,19 +1,19 @@
-use std::{os::unix::process::CommandExt, cell::RefCell, rc::Rc};
+use std::os::unix::process::CommandExt;
 
 use fork::{fork, Fork};
-use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}};
-use nucleo_matcher::{Matcher, pattern::CaseMatching};
+use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}, futures::channel::mpsc};
+use nucleo_matcher::Matcher;
 
-use crate::{icon::{IconCache, Icon}, config::Config, plugin::{PluginManager, Action, entry::Label}};
+use crate::{icon::{IconCache, Icon}, config::Config, plugin::{PluginManager, Action, entry::{Label, OwnedEntry}}};
 
 pub use styled::Theme;
 use styled::{ButtonStyle, TextStyle};
 
-use self::{match_span::MatchSpan, cached_manager::CachedManager};
+use self::{match_span::MatchSpan, async_manager::AsyncManager};
 
 mod styled;
 mod match_span;
-mod cached_manager;
+mod async_manager;
 
 pub struct Keal {
     // UI state
@@ -21,20 +21,26 @@ pub struct Keal {
     selected: usize,
 
     // data state
-    query: String,
+    entries: Vec<OwnedEntry>,
     config: &'static Config,
-    matcher: Rc<RefCell<Matcher>>,
     icons: IconCache,
-    manager: CachedManager
+    manager: AsyncManager,
+    sender: Option<mpsc::Sender<async_manager::Event>>
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    FontLoaded(Result<(), font::Error>),
+    // UI events
     TextInput(String),
     Launch(Option<Label>),
     Event(keyboard::Event),
-    IconCacheLoaded(IconCache)
+
+    // Worker events
+    FontLoaded(Result<(), font::Error>),
+    IconCacheLoaded(IconCache),
+    SenderLoaded(mpsc::Sender<async_manager::Event>),
+    Entries(Vec<OwnedEntry>),
+    Action(Action)
 }
 
 pub struct Flags(pub &'static Config, pub PluginManager);
@@ -59,26 +65,27 @@ impl Application for Keal {
         }, Message::IconCacheLoaded);
 
         let command = Command::batch(vec![iosevka, focus, load_icons]);
-
-        let matcher = Rc::new(RefCell::new(Matcher::default()));
-        let manager = CachedManager::new(manager, config, matcher.clone(), 50, true);
+        let manager = AsyncManager::new(manager, config, Matcher::default(), 50, true);
 
         (Keal {
             input: String::new(),
             selected: 0,
-            query: String::new(),
+            entries: Vec::new(),
             config,
-            matcher,
             icons: IconCache::default(),
+            sender: None,
             manager
         }, command)
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
-        subscription::events_with(|event, _status| match event {
+        let events = subscription::events_with(|event, _status| match event {
             Event::Keyboard(k) => Some(Message::Event(k)),
             _ => None
-        })
+        });
+
+        let manager = self.manager.subscription();
+        subscription::Subscription::batch([events, manager])
     }
 
     fn title(&self) -> String {
@@ -90,7 +97,7 @@ impl Application for Keal {
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
-        let entries = self.manager.entries();
+        let entries = &self.entries;
 
         let input = text_input(&self.config.placeholder_text, &self.input)
             .on_input(Message::TextInput)
@@ -101,7 +108,7 @@ impl Application for Keal {
         let input = container(input)
             .width(Length::Fill);
 
-        let mut matcher = self.matcher.borrow_mut();
+        let data = &mut *self.manager.get_data();
         let mut buf = vec![];
 
         let entries = scrollable(icolumn({
@@ -120,7 +127,7 @@ impl Application for Keal {
                     }
                 }
 
-                for (span, highlighted) in MatchSpan::new(&entry.name, &mut matcher, self.manager.pattern(), &mut buf) {
+                for (span, highlighted) in MatchSpan::new(&entry.name, &mut data.matcher, &data.pattern, &mut buf) {
                     item = item.push(text(span).size(self.config.font_size).style(
                         match highlighted {
                             false => TextStyle::Normal,
@@ -158,14 +165,12 @@ impl Application for Keal {
         // scrollable::Properties::default().width
         use keyboard::Event::KeyPressed;
         match message {
-            Message::FontLoaded(_) => (),
-            Message::TextInput(input) => return self.update_input(input, true),
             Message::Event(event) => match event {
                 KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
                 // TODO: gently scroll window to selected choice
                 KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::N, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
                     self.selected += 1;
-                    self.selected = self.selected.min(self.manager.entries().len().saturating_sub(1));
+                    self.selected = self.selected.min(self.entries.len().saturating_sub(1));
                 }
                 KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::P, modifiers: Modifiers::CTRL }
                 | KeyPressed { key_code: KeyCode::Up, .. } => {
@@ -173,11 +178,20 @@ impl Application for Keal {
                 }
                 _ => ()
             }
+            Message::TextInput(input) => self.update_input(input, true),
             Message::Launch(selected) => {
-                let action = self.manager.use_manager(|m| m.launch(self.config, &self.query, selected));
-                return self.handle_action(action);
+                if let Some(sender) = &mut self.sender {
+                    sender.try_send(async_manager::Event::Launch(selected)).expect("failed to send launch command");
+                }
             }
-            Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache
+            Message::FontLoaded(_) => (),
+            Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
+            Message::Entries(entries) => self.entries = entries,
+            Message::SenderLoaded(mut sender) => {
+                sender.try_send(async_manager::Event::Generate).unwrap();
+                self.sender = Some(sender);
+            },
+            Message::Action(action) => return self.handle_action(action),
         };
 
         Command::none()
@@ -185,37 +199,31 @@ impl Application for Keal {
 }
 
 impl Keal {
-    pub fn update_input(&mut self, input: String, from_user: bool) -> Command<Message> {
-        self.input = input;
-
-        let (query, action) = self.manager.modify_pattern(|manager, pattern| {
-            let (query, action) = manager.update_input(self.config, &self.input, from_user);
-            pattern.reparse(&query, CaseMatching::Ignore);
-            (query, action)
-        });
-
-        self.query = query;
-        self.handle_action(action)
+    pub fn update_input(&mut self, input: String, from_user: bool) {
+        self.input = input.clone();
+        if let Some(sender) = &mut self.sender {
+            sender.try_send(async_manager::Event::UpdateInput(input, from_user)).expect("failed to send update input command");
+        }
     }
 
     fn handle_action(&mut self, action: Action) -> Command<Message> {
         match action {
             Action::None => (),
             Action::ChangeInput(new) => {
-                self.manager.use_manager(|m| m.kill());
-                let c = self.update_input(new, false);
-                return Command::batch([c, text_input::move_cursor_to_end(text_input::Id::new("query_input"))]);
+                self.manager.with_manager(|m| m.kill());
+                self.update_input(new, false);
+                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
             Action::ChangeQuery(new) => {
-                let new = self.manager.manager().current()
-                    .map(|plugin| format!("{} {}", plugin.prefix, new))
-                    .unwrap_or(new);
+                let new = self.manager.use_manager(|m| m.current().map(
+                    |plugin| format!("{} {}", plugin.prefix, new) 
+                )).unwrap_or(new);
+                self.update_input(new, false);
 
-                let c = self.update_input(new, false);
-                return Command::batch([c, text_input::move_cursor_to_end(text_input::Id::new("query_input"))]);
+                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
             Action::Exec(mut command) => {
-                let _ = command.exec();
+                let _ = command.0.exec();
                 return iced::window::close();
             }
             Action::PrintAndClose(message) => {
@@ -227,7 +235,7 @@ impl Keal {
                 Fork::Child => ()
             }
             Action::WaitAndClose => {
-                self.manager.use_manager(|m| m.wait());
+                self.manager.with_manager(|m| m.wait());
                 return iced::window::close();
             }
         }
