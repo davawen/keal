@@ -3,14 +3,13 @@ use iced::{subscription::{Subscription, self }, futures::{channel::mpsc, SinkExt
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{plugin::{PluginManager, entry::Label}, config::Config};
+use crate::{plugin::{PluginManager, entry::Label}, config::Config, arguments::Arguments};
 
 use super::Message;
 
 pub enum Event {
     UpdateInput(String, bool),
-    Launch(Option<Label>),
-    Generate
+    Launch(Option<Label>)
 }
 
 pub struct AsyncManager {
@@ -30,7 +29,7 @@ pub struct Data {
 }
 
 impl AsyncManager {
-    pub fn subscription(&self) -> Subscription<super::Message> {
+    pub fn subscription(&self, arguments: &'static Arguments) -> Subscription<super::Message> {
         let manager = self.manager.clone();
 
         let config = self.config;
@@ -39,6 +38,11 @@ impl AsyncManager {
         let sort_by_usage = self.sort_by_usage;
 
         subscription::channel("manager", 50, move |mut output| async move {
+            {
+                let mut manager = manager.lock().unwrap();
+                manager.load_plugins(arguments);
+            }
+
             let (sender, mut reciever) = mpsc::channel(50);
             output.send(Message::SenderLoaded(sender)).await.unwrap();
 
@@ -70,21 +74,14 @@ impl AsyncManager {
                         };
                         output.send(Message::Action(action)).await.unwrap();
                     }
-                    Event::Generate => {
-                        let entries = {
-                            let data = &mut *data.lock().unwrap();
-                            manager.lock().unwrap().get_entries(config, &mut data.matcher, &data.pattern, num_entries, sort_by_usage)
-                        };
-                        output.send(Message::Entries(entries)).await.unwrap();
-                    }
                 }
             }
         })
     }
 
-    pub fn new(manager: PluginManager, config: &'static Config, matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
+    pub fn new(config: &'static Config, matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
         Self {
-            manager: Arc::new(Mutex::new(manager)),
+            manager: Default::default(),
             config,
             data: Arc::new(Mutex::new(Data {
                 matcher,

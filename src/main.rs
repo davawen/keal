@@ -21,11 +21,10 @@ fn main() -> anyhow::Result<()> {
             anyhow::bail!("error: unknown flag `{flag}`")
         }
     };
+    let arguments = Box::leak(Box::new(arguments));
 
     let config = config::Config::load();
     let config = Box::leak(Box::new(config));
-
-    let manager = plugin::PluginManager::new(&arguments);
 
     ui::Keal::run(Settings {
         window: window::Settings {
@@ -43,7 +42,7 @@ fn main() -> anyhow::Result<()> {
             stretch: config.font_stretch,
             ..Default::default()
         },
-        flags: Some(Flags(config, manager)),
+        flags: Some(Flags(config, arguments)),
         ..Default::default()
     })?;
 

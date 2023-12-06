@@ -4,7 +4,7 @@ use fork::{fork, Fork};
 use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}, futures::channel::mpsc};
 use nucleo_matcher::Matcher;
 
-use crate::{icon::{IconCache, Icon}, config::Config, plugin::{PluginManager, Action, entry::{Label, OwnedEntry}}};
+use crate::{icon::{IconCache, Icon}, config::Config, plugin::{Action, entry::{Label, OwnedEntry}}, arguments::Arguments};
 
 pub use styled::Theme;
 use styled::{ButtonStyle, TextStyle};
@@ -21,9 +21,11 @@ pub struct Keal {
     selected: usize,
 
     // data state
-    entries: Vec<OwnedEntry>,
     config: &'static Config,
+    arguments: &'static Arguments,
     icons: IconCache,
+
+    entries: Vec<OwnedEntry>,
     manager: AsyncManager,
     sender: Option<mpsc::Sender<async_manager::Event>>
 }
@@ -43,7 +45,7 @@ pub enum Message {
     Action(Action)
 }
 
-pub struct Flags(pub &'static Config, pub PluginManager);
+pub struct Flags(pub &'static Config, pub &'static Arguments);
 
 impl Application for Keal {
     type Message = Message;
@@ -52,7 +54,7 @@ impl Application for Keal {
     type Flags = Option<Flags>;
 
     fn new(flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        let Some(Flags(config, manager)) = flags else { unreachable!() };
+        let Some(Flags(config, arguments)) = flags else { unreachable!() };
 
         let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
@@ -65,16 +67,17 @@ impl Application for Keal {
         }, Message::IconCacheLoaded);
 
         let command = Command::batch(vec![iosevka, focus, load_icons]);
-        let manager = AsyncManager::new(manager, config, Matcher::default(), 50, true);
+        let manager = AsyncManager::new(config, Matcher::default(), 50, true);
 
         (Keal {
             input: String::new(),
             selected: 0,
-            entries: Vec::new(),
             config,
+            arguments,
             icons: IconCache::default(),
+            entries: Vec::new(),
+            manager,
             sender: None,
-            manager
         }, command)
     }
 
@@ -84,7 +87,7 @@ impl Application for Keal {
             _ => None
         });
 
-        let manager = self.manager.subscription();
+        let manager = self.manager.subscription(self.arguments);
         subscription::Subscription::batch([events, manager])
     }
 
@@ -187,9 +190,9 @@ impl Application for Keal {
             Message::FontLoaded(_) => (),
             Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
             Message::Entries(entries) => self.entries = entries,
-            Message::SenderLoaded(mut sender) => {
-                sender.try_send(async_manager::Event::Generate).unwrap();
+            Message::SenderLoaded(sender) => {
                 self.sender = Some(sender);
+                self.update_input(self.input.clone(), true); // in case the user typed in before the manager was loaded
             },
             Message::Action(action) => return self.handle_action(action),
         };

@@ -22,32 +22,22 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    pub fn new(arguments: &Arguments) -> Self {
+    pub fn load_plugins(&mut self, arguments: &Arguments) {
         if arguments.dmenu {
             let dmenu = super::builtin::dmenu::DmenuPlugin::create(arguments.protocol);
-            let mut this = Self {
-                plugins: IndexMap::from_iter([
-                    (dmenu.prefix.clone(), dmenu)
-                ]),
-                ..Default::default()
-            };
-
+            self.plugins = IndexMap::from_iter([
+                (dmenu.prefix.clone(), dmenu)
+            ]);
             // add dmenu to default plugins at startup
-            this.add_default_plugin(0);
-            this
+            self.add_default_plugin(0);
         } else {
-            let mut this = Self {
-                plugins: get_user_plugins().into_iter().flatten().collect(),
-                usage: Usage::load(),
-                ..Default::default()
-            };
+            self.plugins = get_user_plugins().into_iter().flatten().collect();
+            self.usage = Usage::load();
 
             let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
             let applications = ApplicationPlugin::create(current_desktop);
-            this.plugins.insert(applications.prefix.clone(), applications);
-            this.add_default_plugin(this.plugins.len() - 1);
-
-            this
+            self.plugins.insert(applications.prefix.clone(), applications);
+            self.add_default_plugin(self.plugins.len() - 1);
         }
     }
 
