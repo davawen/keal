@@ -3,7 +3,7 @@ use nucleo_matcher::{Matcher, pattern::Pattern};
 
 use crate::{config::Config, arguments::Arguments};
 
-use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PluginIndex(usize);
@@ -38,12 +38,20 @@ impl PluginManager {
             let applications = ApplicationPlugin::create(current_desktop);
             self.plugins.insert(applications.prefix.clone(), applications);
             self.add_default_plugin(self.plugins.len() - 1);
+
+            let list = ListPlugin::create();
+            self.plugins.insert(list.prefix.clone(), list);
+            self.add_default_plugin(self.plugins.len() - 1);
         }
     }
 
     fn add_default_plugin(&mut self, index: usize) {
         let plugin = &self.plugins[index];
         self.default_plugins.push((PluginIndex(index), (plugin.generator)(plugin, self)));
+    }
+
+    pub fn list_plugins(&self) -> impl Iterator<Item = (&String, &Plugin)> {
+        self.plugins.iter()
     }
 
     pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_usage: bool) -> Vec<OwnedEntry> {

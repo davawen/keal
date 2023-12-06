@@ -3,7 +3,7 @@ use crate::{icon::IconPath, arguments::Protocol, plugin::{Plugin, PluginExecutio
 use super::user::read_entry_from_stream;
 
 struct DmenuEntry {
-    pub name: String,
+    name: String,
     icon: Option<IconPath>,
     comment: Option<String>
 }
