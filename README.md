@@ -22,7 +22,7 @@ With sway or i3, add this to your config:
 for_window [title="Keal"] floating enable, border none
 ```
 
-TODO: application gif
+![./public/readme.gif]
 
 ## Features
 
