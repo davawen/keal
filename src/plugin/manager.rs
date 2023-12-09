@@ -22,7 +22,7 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    pub fn load_plugins(&mut self, arguments: &Arguments) {
+    pub fn load_plugins(&mut self, config: &Config, arguments: &Arguments) {
         if arguments.dmenu {
             let dmenu = super::builtin::dmenu::DmenuPlugin::create(arguments.protocol);
             self.plugins = IndexMap::from_iter([
@@ -31,17 +31,25 @@ impl PluginManager {
             // add dmenu to default plugins at startup
             self.add_default_plugin(0);
         } else {
-            self.plugins = get_user_plugins().into_iter().flatten().collect();
             self.usage = Usage::load();
+            self.plugins = get_user_plugins().into_iter().flatten().collect();
 
+            // insert application and list plugins
             let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
             let applications = ApplicationPlugin::create(current_desktop);
             self.plugins.insert(applications.prefix.clone(), applications);
-            self.add_default_plugin(self.plugins.len() - 1);
 
             let list = ListPlugin::create();
             self.plugins.insert(list.prefix.clone(), list);
-            self.add_default_plugin(self.plugins.len() - 1);
+
+            for prefix in &config.default_plugins {
+                let Some(index) = self.plugins.get_index_of(prefix) else {
+                    eprintln!("unknown default plugin in configuration: {prefix}");
+                    continue
+                };
+
+                self.add_default_plugin(index);
+            }
         }
     }
 
@@ -115,11 +123,23 @@ impl PluginManager {
 
                 (remainder, Action::None)
             }
-            (None, Some(_)) => { // stop plugin
-                self.current = None;
+            (None, current) => {
+                if current.is_some() { // stop plugin
+                    *current = None;
+                } 
+
+                if from_user {
+                    for (_, execution) in self.default_plugins.iter_mut() {
+                        let action = execution.send_query(config, input);
+                        match action {
+                            Action::None => (),
+                            action => return (input.to_owned(), action)
+                        }
+                    }
+                }
+
                 (input.to_owned(), Action::None)
             }
-            (None, None) => (input.to_owned(), Action::None)
         };
 
         (query, action)

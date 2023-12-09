@@ -15,6 +15,7 @@ pub struct Config {
     pub usage_frequency: bool,
     pub terminal_path: String,
     pub placeholder_text: String,
+    pub default_plugins: Vec<String>,
     pub theme: crate::ui::Theme
 }
 
@@ -29,6 +30,7 @@ impl Default for Config {
             terminal_path: String::new(),
             placeholder_text: String::new(),
             usage_frequency: false,
+            default_plugins: Vec::new(),
             theme: Default::default()
         }
     }
@@ -66,7 +68,7 @@ impl Config {
 
         for field in file.section_iter("keal") {
             parse_fields!(self, field, (
-                font, font_size, font_weight, font_stretch, icon_theme, usage_frequency, terminal_path, placeholder_text
+                font, font_size, font_weight, font_stretch, icon_theme, usage_frequency, terminal_path, placeholder_text, default_plugins
             ));
         }
 

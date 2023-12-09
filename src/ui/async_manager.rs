@@ -40,7 +40,7 @@ impl AsyncManager {
         subscription::channel("manager", 50, move |mut output| async move {
             {
                 let mut manager = manager.lock().unwrap();
-                manager.load_plugins(arguments);
+                manager.load_plugins(config, arguments);
             }
 
             let (sender, mut reciever) = mpsc::channel(50);

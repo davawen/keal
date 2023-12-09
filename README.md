@@ -56,6 +56,9 @@ usage_frequency = true # show the most frequently launched applications first
 
 placeholder_text = search your dreams!
 
+# plugins that you see without typing a prefix
+default_plugins = app,ls 
+
 [colors]
 # color syntax: `rrggbb` or `rrggbbaa`
 background = 24273a
