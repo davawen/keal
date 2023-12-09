@@ -1,4 +1,4 @@
-use std::process;
+use std::{process, collections::HashMap};
 
 use crate::{ icon::IconPath, config::Config };
 use nucleo_matcher::{Matcher, pattern::Pattern};
@@ -17,6 +17,7 @@ pub struct Plugin {
     pub icon: Option<IconPath>,
     pub comment: Option<String>,
     pub prefix: String,
+    pub config: HashMap<String, String>,
     pub generator: PluginGenerator
 }
 

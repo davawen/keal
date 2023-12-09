@@ -115,6 +115,7 @@ impl ApplicationPlugin {
             prefix: "app".to_owned(),
             icon: None,
             comment: Some("Launch applications on the system".to_owned()),
+            config: Default::default(),
             generator: Box::new(move |_, _| {
                 let current_desktop: Vec<&str> = current_desktop.split(':').collect();
                 let app_dirs = xdg_directories("applications");

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use iced::font;
 
 use crate::{xdg_utils::config_dir, ini_parser::Ini};
@@ -16,7 +18,15 @@ pub struct Config {
     pub terminal_path: String,
     pub placeholder_text: String,
     pub default_plugins: Vec<String>,
-    pub theme: crate::ui::Theme
+    pub theme: crate::ui::Theme,
+    pub plugin_overrides: HashMap<String, Override>
+}
+
+#[derive(Default, Debug)]
+pub struct Override {
+    pub prefix: Option<String>,
+    pub icon: Option<String>,
+    pub comment: Option<String>
 }
 
 impl Default for Config {
@@ -31,7 +41,8 @@ impl Default for Config {
             placeholder_text: String::new(),
             usage_frequency: false,
             default_plugins: Vec::new(),
-            theme: Default::default()
+            theme: Default::default(),
+            plugin_overrides: Default::default()
         }
     }
 }
@@ -46,7 +57,7 @@ impl Config {
     }
 
     fn add_from_string(&mut self, content: String) {
-        let file = Ini::from_string(content, &['#', ';']);
+        let mut file = Ini::from_string(content, &['#', ';']);
 
         // Since the name of the field in the ini is the same as in the `Config` struct, we can match it directly.
         // This is what `stringify!($name)` is doing.
@@ -66,13 +77,13 @@ impl Config {
             };
         }
 
-        for field in file.section_iter("keal") {
+        for field in file.remove_section("keal").into_iter().flat_map(|s| s.into_iter()) {
             parse_fields!(self, field, (
                 font, font_size, font_weight, font_stretch, icon_theme, usage_frequency, terminal_path, placeholder_text, default_plugins
             ));
         }
 
-        for color in file.section_iter("colors") {
+        for color in file.remove_section("colors").into_iter().flat_map(|s| s.into_iter()) {
             let theme = &mut self.theme;
             parse_fields!(theme, color, (
                 background,
@@ -81,6 +92,23 @@ impl Config {
                 choice_background, selected_choice_background, hovered_choice_background, pressed_choice_background,
                 scrollbar_enabled, scrollbar, hovered_scrollbar, scrollbar_border_radius
             ));
+        }
+
+        for (name, section) in file.into_sections() {
+            let Some((name, kind)) = name.rsplit_once('.') else { continue };
+
+            match kind {
+                "plugin" => {
+                    let mut over = Override::default();
+                    for field in section.iter() {
+                        parse_fields!(over, field, (
+                            prefix, icon, comment
+                        ))
+                    }
+                    self.plugin_overrides.insert(name.to_owned(), over);
+                },
+                _ => eprintln!("unknown plugin configuration kind: `{name}.{kind}`")
+            }
         }
     }
 
@@ -104,6 +132,12 @@ trait MyFromStr<T> {
 impl<T> MyFromStr<Vec<T>> for str where str: MyFromStr<T> {
     fn my_parse(&self) -> Result<Vec<T>, &str> {
         self.split(',').map(|x| x.my_parse()).collect::<Result<_, _>>()
+    }
+}
+
+impl<T> MyFromStr<Option<T>> for str where str: MyFromStr<T> {
+    fn my_parse(&self) -> Result<Option<T>, &str> {
+        Ok(Some(self.my_parse()?))
     }
 }
 

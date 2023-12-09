@@ -54,8 +54,8 @@ pub struct UserPlugin {
 impl UserPlugin {
     /// creates a `Plugin` with a `UserPlugin` generator
     fn create(plugin_path: &Path, mut ini: Ini) -> Option<Plugin> {
-        let mut ini = ini.remove_section("plugin")?
-            .into_map();
+        let config = ini.remove_section("config").map(|c| c.into_map()).unwrap_or_default();
+        let mut ini = ini.remove_section("plugin")?.into_map();
 
         let exec = plugin_path.join(ini.remove("exec")?);
         Some(Plugin {
@@ -63,6 +63,7 @@ impl UserPlugin {
             icon: ini.remove("icon").map(|i| IconPath::new(i, Some(plugin_path))),
             comment: ini.remove("comment"),
             prefix: ini.remove("prefix")?,
+            config,
             generator: Box::new(move |_, _| {
                 use std::process::{Stdio, Command};
 

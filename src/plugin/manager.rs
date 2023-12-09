@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{config::Config, arguments::Arguments};
+use crate::{config::Config, arguments::Arguments, icon::IconPath, xdg_utils::config_dir};
 
 use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
 
@@ -41,6 +41,25 @@ impl PluginManager {
 
             let list = ListPlugin::create();
             self.plugins.insert(list.prefix.clone(), list);
+
+            let config_path = config_dir().ok();
+            for (name, over) in &config.plugin_overrides {
+                if let Some(index) = self.plugins.iter().position(|(_, p)| &p.name == name) {
+                    let index = if let Some(prefix) = over.prefix.as_ref()  { 
+                        let (_, mut plugin) = self.plugins.swap_remove_index(index).unwrap();
+                        plugin.prefix = prefix.clone();
+                        let (index, _) = self.plugins.insert_full(prefix.clone(), plugin);
+                        index
+                    } else { index };
+
+                    let (_, plugin) = self.plugins.get_index_mut(index).unwrap();
+
+                    if let Some(icon)    = over.icon.as_ref()    {  plugin.icon    = Some(IconPath::new(icon.to_owned(), config_path.as_deref())) }
+                    if let Some(comment) = over.comment.as_ref() {  plugin.comment = Some(comment.clone()) }
+                } else {
+                    eprintln!("unknown plugin in override: {name}");
+                }
+            }
 
             for prefix in &config.default_plugins {
                 let Some(index) = self.plugins.get_index_of(prefix) else {

@@ -45,6 +45,7 @@ impl DmenuPlugin {
             prefix: "\0".to_owned(), // using an untypable null character, since this plugin's prefix should never be used
             icon: None,
             comment: None,
+            config: Default::default(),
             generator: Box::new(move |_, _| {
                 // reads entries from stdin
                 let mut entries = vec![];

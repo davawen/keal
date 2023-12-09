@@ -28,7 +28,8 @@ for_window [title="Keal"] floating enable, border none
 
 - [x] Search installed applications and desktop files 
 - [x] Configuration (font, style/colors, icon theme)
-  - [ ] Plugin overrides/configuration
+  - [x] Plugin overrides
+  - [ ] Plugin configuration
 - [ ] Custom aliases
 - [x] Frequently launched applications/plugins
 - [x] Dmenu mode (with rofi extended protocol)
@@ -81,6 +82,20 @@ scrollbar_enabled = true # show scrollbar on right side, true or false
 scrollbar = 5b6078 # if scrollbar is enabled
 hovered_scrollbar = 6e738d
 scrollbar_border_radius = 2.0 # floating point number
+```
+
+### Plugin configuration
+
+You can override plugin parameters in your `config.ini` like so:
+```ini
+[keal]
+default_plugins = apps,list # remember to update default plugins if you modify prefixes
+
+# starts with the plugin name
+[List.plugin]
+prefix = list
+icon = ./my_list_icon.png # looks in $HOME/.config/keal/
+comment = I changed the comment!
 ```
 
 ## Plugins

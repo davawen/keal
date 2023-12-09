@@ -17,6 +17,15 @@ impl Section {
     }
 }
 
+impl IntoIterator for Section {
+    type Item = (String, String);
+    type IntoIter = std::collections::hash_map::IntoIter<String, String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.keys.into_iter()
+    }
+
+}
+
 #[derive(Debug)]
 pub struct Ini {
     globals: HashMap<String, String>,
@@ -79,9 +88,8 @@ impl Ini {
         self.globals.iter()
     }
 
-    #[allow(unused)]
-    pub fn sections(&self) -> impl Iterator<Item = (&String, &Section)> {
-        self.sections.iter()
+    pub fn into_sections(self) -> impl Iterator<Item = (String, Section)> {
+        self.sections.into_iter()
     }
 
     /// Returns an empty iterator if section does not exist

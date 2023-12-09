@@ -9,13 +9,13 @@ struct ListEntry {
 pub struct ListPlugin(Vec<ListEntry>);
 
 impl ListPlugin {
-    /// this should be added LAST to list every existing plugin
     pub fn create() -> Plugin {
         Plugin {
             name: "List".to_owned(),
             prefix: "ls".to_owned(),
             icon: None,
             comment: Some("List loaded keal plugins".to_owned()),
+            config: Default::default(),
             generator: Box::new(|_, manager| {
                 let entries = manager.list_plugins()
                     .map(|(prefix, plug)| ListEntry {
