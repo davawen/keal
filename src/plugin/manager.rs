@@ -61,6 +61,21 @@ impl PluginManager {
                 }
             }
 
+            for (name, config) in &config.plugin_configs {
+                if let Some(index) = self.plugins.iter().position(|(_, p)| &p.name == name) {
+                    let plugin = &mut self.plugins[index];
+                    for (field, value) in config {
+                        if let Some(plugin_value) = plugin.config.get_mut(field) {
+                            *plugin_value = value.clone()
+                        } else {
+                            eprintln!("unknown configuration option: {field}, in config of plugin {name}");
+                        }
+                    }
+                } else {
+                    eprintln!("unknown plugin in config: {name}");
+                }
+            }
+
             for prefix in &config.default_plugins {
                 let Some(index) = self.plugins.get_index_of(prefix) else {
                     eprintln!("unknown default plugin in configuration: {prefix}");

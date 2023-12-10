@@ -2,13 +2,15 @@
 
 use std::{collections::HashMap, path::Path};
 
+use indexmap::IndexMap;
+
 #[derive(Debug, Default)]
 pub struct Section {
-    keys: HashMap<String, String>
+    keys: IndexMap<String, String>
 }
 
 impl Section {
-    pub fn into_map(self) -> HashMap<String, String> {
+    pub fn into_map(self) -> IndexMap<String, String> {
         self.keys
     }
 
@@ -19,7 +21,7 @@ impl Section {
 
 impl IntoIterator for Section {
     type Item = (String, String);
-    type IntoIter = std::collections::hash_map::IntoIter<String, String>;
+    type IntoIter = indexmap::map::IntoIter<String, String>;
     fn into_iter(self) -> Self::IntoIter {
         self.keys.into_iter()
     }
@@ -28,7 +30,7 @@ impl IntoIterator for Section {
 
 #[derive(Debug)]
 pub struct Ini {
-    globals: HashMap<String, String>,
+    globals: IndexMap<String, String>,
     sections: HashMap<String, Section>
 }
 
@@ -41,7 +43,7 @@ impl Ini {
     /// `comment_chars`: which characters start line comments?
     pub fn from_string(file: String, comment_chars: &[char]) -> Self {
         let mut this = Self {
-            globals: HashMap::default(),
+            globals: IndexMap::default(),
             sections: HashMap::default()
         };
 

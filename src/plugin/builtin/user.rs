@@ -64,7 +64,7 @@ impl UserPlugin {
             comment: ini.remove("comment"),
             prefix: ini.remove("prefix")?,
             config,
-            generator: Box::new(move |_, _| {
+            generator: Box::new(move |plugin, _| {
                 use std::process::{Stdio, Command};
 
                 let cwd = exec.parent().unwrap().to_path_buf();
@@ -83,11 +83,18 @@ impl UserPlugin {
                     child, stdin, stdout, events: PluginEvents::None, cwd
                 };
 
+                this.send_config(plugin);
                 this.get_events();
                 this.entries = this.get_choice_list();
                 Box::new(this)
             })
         })
+    }
+
+    fn send_config(&mut self, plugin: &Plugin) {
+        for config in plugin.config.values() {
+            writeln!(self.stdin, "{config}").unwrap();
+        }
     }
 
     fn get_events(&mut self) {

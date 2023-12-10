@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use iced::font;
+use indexmap::IndexMap;
 
 use crate::{xdg_utils::config_dir, ini_parser::Ini};
 
@@ -19,7 +20,8 @@ pub struct Config {
     pub placeholder_text: String,
     pub default_plugins: Vec<String>,
     pub theme: crate::ui::Theme,
-    pub plugin_overrides: HashMap<String, Override>
+    pub plugin_overrides: HashMap<String, Override>,
+    pub plugin_configs: HashMap<String, IndexMap<String, String>>
 }
 
 #[derive(Default, Debug)]
@@ -42,7 +44,8 @@ impl Default for Config {
             usage_frequency: false,
             default_plugins: Vec::new(),
             theme: Default::default(),
-            plugin_overrides: Default::default()
+            plugin_overrides: Default::default(),
+            plugin_configs: Default::default()
         }
     }
 }
@@ -106,7 +109,10 @@ impl Config {
                         ))
                     }
                     self.plugin_overrides.insert(name.to_owned(), over);
-                },
+                }
+                "config" => {
+                    self.plugin_configs.insert(name.to_owned(), section.into_map());
+                }
                 _ => eprintln!("unknown plugin configuration kind: `{name}.{kind}`")
             }
         }

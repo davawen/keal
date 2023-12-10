@@ -29,7 +29,7 @@ for_window [title="Keal"] floating enable, border none
 - [x] Search installed applications and desktop files 
 - [x] Configuration (font, style/colors, icon theme)
   - [x] Plugin overrides
-  - [ ] Plugin configuration
+  - [x] Plugin configuration
 - [ ] Custom aliases
 - [x] Frequently launched applications/plugins
 - [x] Dmenu mode (with rofi extended protocol)
@@ -98,6 +98,12 @@ icon = ./my_list_icon.png # looks in $HOME/.config/keal/
 comment = I changed the comment!
 ```
 
+Additionally, you can edit the config parameters exposed by plugins:
+```ini
+[Session Manager.config]
+log_out = sway exit
+```
+
 ## Plugins
 
 Plugins are placed in `~/.config/keal/plugins/`.
@@ -111,11 +117,16 @@ icon = user # (optional) Plugin icon
 comment = Manage current session # (optional) Comment shown on the right
 prefix = sm # What the user needs to type
 exec = exec.sh # Executable, from the plugin's directory
+
+# You can optionally specify plugin options:
+[config]
+log_out =
 ```
 
 Plugins communicate via `stdio`, as to be as simple and universal as possible.  
 
 - At startup:
+  - Keal sends the plugin its configuration options (that might have been overriden by the user) in the order they are declared
   - The plugin tells which events it wants to be subscribed to
   - The plugin responds with an initial choice list (newline separated)
 - Then, in a loop:
@@ -143,7 +154,11 @@ Different options are indicated by a field name, a colon, and a value.
 A choice list expects `name:`s, with optional icons and comments, finished with an `end`.  
 Empty lines are ignored.
 
-- Keal can take the following actions:
+- You can subscribe to the following events:
+  - `enter`: The user selected or clicked an option. Sends the index of the given choice
+  - `shift_enter`: Same, but with shift held
+  - `query`: Query string changed. Sends the new query.
+- and Keal can take the following actions:
   - `fork`: Closes the window, and continue the plugin as a separate process
       Use this if you wish to launch an application from the plugin
   - `wait_and_close`: Wait for the plugin to end before closing the window
@@ -153,10 +168,6 @@ Empty lines are ignored.
   - `update_all`: Replace the current choice list with a new one
   - `update:<index>`: Change a single choice. Give it as a one-element choice list (don't forget the `end`!)
   - `none`: Do nothing
-- And you can subscribe to the following events:
-  - `enter`: The user selected or clicked an option. Sends the index of the given choice
-  - `shift_enter`: Same, but with shift held
-  - `query`: Query string changed. Sends the new query.
 
 And here is an exemple of a more interactive plugin:
 ```
@@ -189,3 +200,7 @@ And here is an exemple of a more interactive plugin:
 ### Messed up colors / icons showing as black boxes
 
 Make sure you have graphics drivers installed, `iced` uses `wgpu`, which depends on Vulkan/OpenGL/Metal.
+
+### Hanging when developing a plugin
+
+Make sure you didn't forget to send an `end` after a choice list. Keal will wait indefinitely for it if you forget it!

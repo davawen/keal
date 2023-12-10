@@ -1,6 +1,7 @@
-use std::{process, collections::HashMap};
+use std::process;
 
 use crate::{ icon::IconPath, config::Config };
+use indexmap::IndexMap;
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
 pub mod builtin;
@@ -17,7 +18,7 @@ pub struct Plugin {
     pub icon: Option<IconPath>,
     pub comment: Option<String>,
     pub prefix: String,
-    pub config: HashMap<String, String>,
+    pub config: IndexMap<String, String>,
     pub generator: PluginGenerator
 }
 
