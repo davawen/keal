@@ -29,8 +29,6 @@ pub struct Data {
 
 impl AsyncManager {
     pub fn subscription(&self) -> Subscription<super::Message> {
-        log_time("subscribing to async manager");
-
         let manager = self.manager.clone();
 
         let data = self.data.clone();
