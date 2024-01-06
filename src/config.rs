@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::OnceLock};
 
 use iced::font;
 use indexmap::IndexMap;
@@ -50,9 +50,18 @@ impl Default for Config {
     }
 }
 
+static CONFIG: OnceLock<Config> = OnceLock::new();
+pub fn config() -> &'static Config {
+    CONFIG.get().expect("config should have been initialized in main")
+}
+
 impl Config {
+    pub fn init() -> &'static Self {
+        CONFIG.get_or_init(Self::load)
+    }
+
     /// Loads the default included configuration (in public/default-config.ini)
-    pub fn default_config() -> Self {
+    fn default_config() -> Self {
         // SAFETY: the default config needs to have every field filled in
         let mut config = Config::default();
         config.add_from_string(include_str!("../public/default-config.ini").to_owned());
@@ -118,7 +127,7 @@ impl Config {
         }
     }
 
-    pub fn load() -> Self {
+    fn load() -> Self {
         let mut config = Config::default_config();
 
         let Ok(mut config_path) = config_dir() else { return config };

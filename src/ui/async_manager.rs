@@ -3,7 +3,7 @@ use iced::{subscription::{Subscription, self }, futures::{channel::mpsc, SinkExt
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{plugin::{PluginManager, entry::Label}, config::Config, arguments::Arguments};
+use crate::{plugin::{PluginManager, entry::Label}, log_time};
 
 use super::Message;
 
@@ -16,7 +16,6 @@ pub struct AsyncManager {
     manager: Arc<Mutex<PluginManager>>,
 
     // data used to regenerate entries
-    config: &'static Config,
     data: Arc<Mutex<Data>>,
     num_entries: usize,
     sort_by_usage: bool,
@@ -29,18 +28,22 @@ pub struct Data {
 }
 
 impl AsyncManager {
-    pub fn subscription(&self, arguments: &'static Arguments) -> Subscription<super::Message> {
+    pub fn subscription(&self) -> Subscription<super::Message> {
+        log_time("subscribing to async manager");
+
         let manager = self.manager.clone();
 
-        let config = self.config;
         let data = self.data.clone();
         let num_entries = self.num_entries;
         let sort_by_usage = self.sort_by_usage;
 
         subscription::channel("manager", 50, move |mut output| async move {
             {
+                log_time("locking sync manager");
                 let mut manager = manager.lock().unwrap();
-                manager.load_plugins(config, arguments);
+
+                log_time("loading plugins");
+                manager.load_plugins();
             }
 
             let (sender, mut reciever) = mpsc::channel(50);
@@ -53,13 +56,13 @@ impl AsyncManager {
                     Event::UpdateInput(s, from_user) => {
                         let (entries, action) = {
                             let mut manager = manager.lock().unwrap();
-                            let (new_query, action) = manager.update_input(config, &s, from_user);
+                            let (new_query, action) = manager.update_input(&s, from_user);
 
                             let data = &mut *data.lock().unwrap();
                             data.pattern.reparse(&new_query, nucleo_matcher::pattern::CaseMatching::Ignore);
                             data.query = new_query;
 
-                            let entries = manager.get_entries(config, &mut data.matcher, &data.pattern, num_entries, sort_by_usage);
+                            let entries = manager.get_entries(&mut data.matcher, &data.pattern, num_entries, sort_by_usage);
                             (entries, action)
                         };
 
@@ -70,7 +73,7 @@ impl AsyncManager {
                         let action = {
                             let mut manager = manager.lock().unwrap();
                             let data = data.lock().unwrap();
-                            manager.launch(config, &data.query, label)
+                            manager.launch(&data.query, label)
                         };
                         output.send(Message::Action(action)).await.unwrap();
                     }
@@ -79,10 +82,9 @@ impl AsyncManager {
         })
     }
 
-    pub fn new(config: &'static Config, matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
+    pub fn new(matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
         Self {
             manager: Default::default(),
-            config,
             data: Arc::new(Mutex::new(Data {
                 matcher,
                 query: String::default(),

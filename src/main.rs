@@ -1,8 +1,9 @@
 #![allow(non_snake_case)]
 
-use arguments::Arguments;
+use std::sync::OnceLock;
+
+use arguments::{Arguments, arguments};
 use iced::{Application, Settings, window, Font, font};
-use ui::Flags;
 
 mod ui;
 mod icon;
@@ -13,18 +14,29 @@ mod plugin;
 
 mod arguments;
 
+static START: OnceLock<std::time::Instant> = OnceLock::new();
+fn log_time(s: impl ToString) {
+    if !arguments().timings { return }
+
+    let now = std::time::Instant::now();
+    let duration = now.duration_since(*START.get().unwrap());
+
+    eprintln!("[{}.{:03}]: {}", duration.as_secs(), duration.subsec_millis(), s.to_string());
+}
+
 fn main() -> anyhow::Result<()> {
-    let arguments = match Arguments::parse() {
-        Ok(a) => a,
+    START.get_or_init(std::time::Instant::now);
+    match Arguments::init() {
+        Ok(_) => (),
         Err(arguments::Error::Exit) => return Ok(()),
         Err(arguments::Error::UnknownFlag(flag)) => {
             anyhow::bail!("error: unknown flag `{flag}`")
         }
     };
-    let arguments = Box::leak(Box::new(arguments));
 
-    let config = config::Config::load();
-    let config = Box::leak(Box::new(config));
+    let config = config::Config::init();
+
+    log_time("read config");
 
     ui::Keal::run(Settings {
         window: window::Settings {
@@ -42,7 +54,6 @@ fn main() -> anyhow::Result<()> {
             stretch: config.font_stretch,
             ..Default::default()
         },
-        flags: Some(Flags(config, arguments)),
         ..Default::default()
     })?;
 

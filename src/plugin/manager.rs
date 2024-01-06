@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{config::Config, arguments::Arguments, icon::IconPath, xdg_utils::config_dir};
+use crate::{config::config, arguments::arguments, icon::IconPath, xdg_utils::config_dir, log_time};
 
 use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
 
@@ -22,7 +22,9 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    pub fn load_plugins(&mut self, config: &Config, arguments: &Arguments) {
+    pub fn load_plugins(&mut self) {
+        let arguments = arguments();
+
         if arguments.dmenu {
             let dmenu = super::builtin::dmenu::DmenuPlugin::create(arguments.protocol);
             self.plugins = IndexMap::from_iter([
@@ -35,13 +37,18 @@ impl PluginManager {
             self.plugins = get_user_plugins().into_iter().flatten().collect();
 
             // insert application and list plugins
+            log_time("loading application plugin");
             let current_desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
             let applications = ApplicationPlugin::create(current_desktop);
             self.plugins.insert(applications.prefix.clone(), applications);
 
+            log_time("loading list plugin");
             let list = ListPlugin::create();
             self.plugins.insert(list.prefix.clone(), list);
 
+            log_time("loading plugin overrides");
+
+            let config = config();
             let config_path = config_dir().ok();
             for (name, over) in &config.plugin_overrides {
                 if let Some(index) = self.plugins.iter().position(|(_, p)| &p.name == name) {
@@ -61,6 +68,7 @@ impl PluginManager {
                 }
             }
 
+            log_time("loading plugin configs");
             for (name, config) in &config.plugin_configs {
                 if let Some(index) = self.plugins.iter().position(|(_, p)| &p.name == name) {
                     let plugin = &mut self.plugins[index];
@@ -76,6 +84,7 @@ impl PluginManager {
                 }
             }
 
+            log_time("loading user default plugins");
             for prefix in &config.default_plugins {
                 let Some(index) = self.plugins.get_index_of(prefix) else {
                     eprintln!("unknown default plugin in configuration: {prefix}");
@@ -84,6 +93,7 @@ impl PluginManager {
 
                 self.add_default_plugin(index);
             }
+            log_time("finished loading user default plugins");
         }
     }
 
@@ -96,7 +106,9 @@ impl PluginManager {
         self.plugins.iter()
     }
 
-    pub fn get_entries(&self, config: &Config, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_usage: bool) -> Vec<OwnedEntry> {
+    pub fn get_entries(&self, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_usage: bool) -> Vec<OwnedEntry> {
+        let config = config();
+
         let mut entries = vec![];
         let mut buf = vec![];
         if let Some((idx, current)) = &self.current {
@@ -129,7 +141,7 @@ impl PluginManager {
     /// `from_user` describes wether this change originates from user interaction
     /// Or wether it comes from a plugin action, (and should therefore not be propagated as an event, to avoid cycles).
     /// Returns the actual query string, and the action that resulted from the input
-    pub fn update_input(&mut self, config: &Config, input: &str, from_user: bool) -> (String, Action) {
+    pub fn update_input(&mut self, input: &str, from_user: bool) -> (String, Action) {
         let filter_starts_with_plugin = if let Some((name, remainder)) = input.split_once(' ') {
             self.plugins.get_full(name).map(|(idx, _, plugin)| ((PluginIndex(idx), plugin), remainder))
         } else { None };
@@ -151,7 +163,7 @@ impl PluginManager {
                     let execution = (plugin.generator)(plugin, self);
                     self.current = Some((idx, execution));
                 } else if from_user { // send query event
-                    let action = execution.send_query(config, &remainder);
+                    let action = execution.send_query(config(), &remainder);
                     return (remainder, action);
                 }
 
@@ -164,7 +176,7 @@ impl PluginManager {
 
                 if from_user {
                     for (_, execution) in self.default_plugins.iter_mut() {
-                        let action = execution.send_query(config, input);
+                        let action = execution.send_query(config(), input);
                         match action {
                             Action::None => (),
                             action => return (input.to_owned(), action)
@@ -180,7 +192,8 @@ impl PluginManager {
     }
 
     /// `selected` contains the `plugin_idx` field of a `LabelledEntry`, and the `index` field of an `Entry`
-    pub fn launch(&mut self, config: &Config, query: &str, selected: Option<Label>) -> Action {
+    pub fn launch(&mut self, query: &str, selected: Option<Label>) -> Action {
+        let config = config();
         if let Some((plug, current)) = &mut self.current {
             if let Some(Label { index, .. }) = selected {
                 self.usage.add_use((&self.plugins[plug.0].name, current.get_name(index)));

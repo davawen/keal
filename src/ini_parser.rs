@@ -95,10 +95,12 @@ impl Ini {
     }
 
     /// Returns an empty iterator if section does not exist
+    #[allow(unused)]
     pub fn section_iter(&self, section: &str) -> impl Iterator<Item = (&String, &String)> {
         self.section(section).into_iter().flat_map(|s| s.iter())
     }
 
+    #[allow(unused)]
     pub fn section(&self, section: &str) -> Option<&Section> {
         self.sections.get(section)
     }

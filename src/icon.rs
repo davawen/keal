@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::{PathBuf, Path}};
 
 use walkdir::WalkDir;
 
-use crate::xdg_utils::xdg_directories;
+use crate::{xdg_utils::xdg_directories, log_time};
 
 /// Distinguishes between a direct path to an icon, and an icon identifier that needs to be searched in IconCache.
 #[derive(Debug, Clone)]
@@ -48,6 +48,8 @@ impl From<PathBuf> for Icon {
 
 impl IconCache {
     pub fn new(icon_themes: &[String]) -> Self {
+        log_time("loading icon cache");
+
         let icon_dirs = xdg_directories("icons");
         // for every xdg directory, add icon theme, by order of preference
         let mut icon_dirs: Vec<_> = icon_themes.iter()
@@ -68,6 +70,8 @@ impl IconCache {
                 cache.0.insert(name.to_owned(), file.into_path().into());
             }
         }
+
+        log_time("finished loading icon cache");
 
         cache
     }

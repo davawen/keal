@@ -1,6 +1,8 @@
 use std::{borrow::Borrow, hash::Hash, collections::HashMap, path::PathBuf};
 use serde::{Serialize, Deserialize};
 
+use crate::log_time;
+
 // type nonsense to allow borrowing the string that goes in the key
 trait UsageKey {
     fn a(&self) -> &str;
@@ -53,6 +55,7 @@ impl Usage {
     }
 
     pub fn load() -> Self {
+        log_time("loading usage");
         let usage = Usage::file_path();
         if let Ok(file) = std::fs::File::open(&usage) {
             serde_cbor::from_reader(file).unwrap_or_else(|_| {

@@ -4,7 +4,7 @@ use fork::{fork, Fork};
 use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}, futures::channel::mpsc};
 use nucleo_matcher::Matcher;
 
-use crate::{icon::{IconCache, Icon}, config::Config, plugin::{Action, entry::{Label, OwnedEntry}}, arguments::Arguments};
+use crate::{icon::{IconCache, Icon}, config::config, plugin::{Action, entry::{Label, OwnedEntry}}, log_time};
 
 pub use styled::Theme;
 use styled::{ButtonStyle, TextStyle};
@@ -21,13 +21,13 @@ pub struct Keal {
     selected: usize,
 
     // data state
-    config: &'static Config,
-    arguments: &'static Arguments,
     icons: IconCache,
 
     entries: Vec<OwnedEntry>,
     manager: AsyncManager,
-    sender: Option<mpsc::Sender<async_manager::Event>>
+    sender: Option<mpsc::Sender<async_manager::Event>>,
+
+    first_event: bool
 }
 
 #[derive(Debug, Clone)]
@@ -45,16 +45,16 @@ pub enum Message {
     Action(Action)
 }
 
-pub struct Flags(pub &'static Config, pub &'static Arguments);
-
 impl Application for Keal {
     type Message = Message;
     type Theme = Theme;
     type Executor = executor::Default;
-    type Flags = Option<Flags>;
+    type Flags = ();
 
-    fn new(flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
-        let Some(Flags(config, arguments)) = flags else { unreachable!() };
+    fn new(_: Self::Flags) -> (Self, iced::Command<Self::Message>) {
+        log_time("initializing app");
+
+        let config = config();
 
         let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
@@ -67,17 +67,18 @@ impl Application for Keal {
         }, Message::IconCacheLoaded);
 
         let command = Command::batch(vec![iosevka, focus, load_icons]);
-        let manager = AsyncManager::new(config, Matcher::default(), 50, true);
+        let manager = AsyncManager::new(Matcher::default(), 50, true);
+
+        log_time("finished initializing");
 
         (Keal {
             input: String::new(),
             selected: 0,
-            config,
-            arguments,
             icons: IconCache::default(),
             entries: Vec::new(),
             manager,
             sender: None,
+            first_event: false
         }, command)
     }
 
@@ -87,7 +88,7 @@ impl Application for Keal {
             _ => None
         });
 
-        let manager = self.manager.subscription(self.arguments);
+        let manager = self.manager.subscription();
         subscription::Subscription::batch([events, manager])
     }
 
@@ -96,16 +97,17 @@ impl Application for Keal {
     }
 
     fn theme(&self) -> Self::Theme {
-        self.config.theme.clone() // unfortunate clone, not sure how to get rid of this
+        config().theme.clone() // unfortunate clone, not sure how to get rid of this
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
         let entries = &self.entries;
+        let config = config();
 
-        let input = text_input(&self.config.placeholder_text, &self.input)
+        let input = text_input(&config.placeholder_text, &self.input)
             .on_input(Message::TextInput)
             .on_submit(Message::Launch(entries.get(self.selected).map(|e| e.label)))
-            .size(self.config.font_size * 1.25).padding(self.config.font_size)
+            .size(config.font_size * 1.25).padding(config.font_size)
             .id(text_input::Id::new("query_input"));
 
         let input = container(input)
@@ -123,15 +125,15 @@ impl Application for Keal {
                 if let Some(icon) = &entry.icon {
                     if let Some(icon) = self.icons.get(icon) {
                         let element: Element<_, _> = match icon {
-                            Icon::Svg(path) => svg(svg::Handle::from_path(path)).width(self.config.font_size).height(self.config.font_size).into(),
-                            Icon::Other(path) => image(path).width(self.config.font_size).height(self.config.font_size).into()
+                            Icon::Svg(path) => svg(svg::Handle::from_path(path)).width(config.font_size).height(config.font_size).into(),
+                            Icon::Other(path) => image(path).width(config.font_size).height(config.font_size).into()
                         };
                         item = item.push(container(element).padding(4));
                     }
                 }
 
                 for (span, highlighted) in MatchSpan::new(&entry.name, &mut data.matcher, &data.pattern, &mut buf) {
-                    item = item.push(text(span).size(self.config.font_size).style(
+                    item = item.push(text(span).size(config.font_size).style(
                         match highlighted {
                             false => TextStyle::Normal,
                             true => TextStyle::Matched { selected },
@@ -144,7 +146,7 @@ impl Application for Keal {
                     item = item.push(Space::with_width(5.0)); // minimum amount of space between name and comment
                     item = item.push(
                         text(comment)
-                            .size(self.config.font_size)
+                            .size(config.font_size)
                             .style(TextStyle::Comment)
                     );
                 }
@@ -164,6 +166,11 @@ impl Application for Keal {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+        if !self.first_event {
+            self.first_event = true;
+            log_time("recieved first event");
+        }
+
         // iced::window::fetch_size(f)
         // scrollable::Properties::default().width
         use keyboard::Event::KeyPressed;
