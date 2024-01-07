@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::OnceLock};
 
-use iced::font;
+use iced::{font, widget::text};
 use indexmap::IndexMap;
 
 use crate::{xdg_utils::config_dir, ini_parser::Ini};
@@ -14,6 +14,7 @@ pub struct Config {
     pub font_weight: font::Weight,
     pub font_stretch: font::Stretch,
     pub font_size: f32,
+    pub text_shaping: text::Shaping,
     pub icon_theme: Vec<String>,
     pub usage_frequency: bool,
     pub terminal_path: String,
@@ -35,9 +36,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             font: String::new(),
-            font_size: 0.0,
             font_weight: font::Weight::Normal,
             font_stretch: font::Stretch::Normal,
+            font_size: 0.0,
+            text_shaping: text::Shaping::default(),
             icon_theme: vec![],
             terminal_path: String::new(),
             placeholder_text: String::new(),
@@ -91,7 +93,7 @@ impl Config {
 
         for field in file.remove_section("keal").into_iter().flat_map(|s| s.into_iter()) {
             parse_fields!(self, field, (
-                font, font_size, font_weight, font_stretch, icon_theme, usage_frequency, terminal_path, placeholder_text, default_plugins
+                font, font_size, font_weight, font_stretch, text_shaping, icon_theme, usage_frequency, terminal_path, placeholder_text, default_plugins
             ));
         }
 
@@ -191,6 +193,16 @@ impl MyFromStr<font::Stretch> for str {
             _ => Err("unknown font stretch")?
         };
         Ok(v)
+    }
+}
+
+impl MyFromStr<text::Shaping> for str {
+    fn my_parse(&self) -> Result<text::Shaping, &str> {
+        match self {
+            "basic" => Ok(text::Shaping::Basic),
+            "advanced" => Ok(text::Shaping::Advanced),
+            _ => Err("unknown text shaping")
+        }
     }
 }
 

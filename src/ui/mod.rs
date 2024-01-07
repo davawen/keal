@@ -133,7 +133,7 @@ impl Application for Keal {
                 }
 
                 for (span, highlighted) in MatchSpan::new(&entry.name, &mut data.matcher, &data.pattern, &mut buf) {
-                    item = item.push(text(span).size(config.font_size).style(
+                    item = item.push(text(span).size(config.font_size).shaping(config.text_shaping).style(
                         match highlighted {
                             false => TextStyle::Normal,
                             true => TextStyle::Matched { selected },
@@ -147,6 +147,7 @@ impl Application for Keal {
                     item = item.push(
                         text(comment)
                             .size(config.font_size)
+                            .shaping(config.text_shaping)
                             .style(TextStyle::Comment)
                     );
                 }

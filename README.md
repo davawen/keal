@@ -51,6 +51,11 @@ icon_theme = hicolor
 # you can specify multiple icon themes by preference:
 #   icon_theme = Zafiro-Icons-Dark,Adwaita,hicolor
 
+# Text shaping may be expensive performance wise, but is necessary if your font does not contain all unicode characters and you need to interact with them.
+# Thus it is enabled by default.
+# If you know for a fact there won't be any unknown characters, you can set it to `basic`.
+text_shaping = advanced
+
 terminal_path = kitty # which terminal to use to launch terminal applications
 
 usage_frequency = true # show the most frequently launched applications first
