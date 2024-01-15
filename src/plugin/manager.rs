@@ -121,15 +121,17 @@ impl PluginManager {
             }
         }
 
-        // primary sort ranks by usage
         if sort_by_usage {
-            entries.sort_by_key(|entry|
-                std::cmp::Reverse(self.usage.get((&self.plugins[entry.label.plugin_index.0].name, &entry.name)))
-            );
+            // first sort by score, then by usage
+            entries.sort_by_key(|entry| (
+                std::cmp::Reverse(entry.score),
+                std::cmp::Reverse(self.usage.get((&self.plugins[entry.label.plugin_index.0].name, &entry.name))),
+            ));
+        } else {
+            // only sort by score
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.score));
         }
 
-        // secondary sort puts best match at the top (stable = keeps relative order of elements)
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.score));
         entries.truncate(n);
 
         // this clones the value of only the top keys, which should incur pretty minimal performance loss
@@ -150,6 +152,8 @@ impl PluginManager {
         // if in plugin mode, remove plugin prefix from filter
         let (query, action) = match (filter_starts_with_plugin, &mut self.current) {
             (Some(((idx, plugin), remainder)), None) => { // launch plugin
+                self.usage.add_use(("List", &plugin.prefix));
+                
                 let execution = (plugin.generator)(plugin, self);
                 self.current = Some((idx, execution));
 
