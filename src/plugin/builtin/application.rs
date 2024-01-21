@@ -172,12 +172,13 @@ impl PluginExecution for ApplicationPlugin {
         let mut charbuf = vec![];
 
         for (index, entry) in self.0.iter().enumerate() {
-            let a = pattern.score(Utf32Str::new(&entry.name, &mut charbuf), matcher);
-            let b = entry.comment.as_ref().and_then(|c| pattern.score(Utf32Str::new(c, &mut charbuf), matcher));
-            let c = pattern.score(entry.to_match.slice(..), matcher);
-
-            let score = a.map(|a| b.map(|b| a + b).unwrap_or(a)).or(b)
-                .map(|a_b| c.map(|c| a_b + c).unwrap_or(a_b)).or(c);
+            let score = if let Some(s) = pattern.score(Utf32Str::new(&entry.name, &mut charbuf), matcher) {
+                Some(s)
+            } else if let Some(comment) = &entry.comment {
+                pattern.score(Utf32Str::new(comment, &mut charbuf), matcher)
+            } else {
+                pattern.score(entry.to_match.slice(..), matcher)
+            };
 
             let Some(score) = score else { continue };
 
