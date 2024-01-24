@@ -3,7 +3,7 @@ use nucleo_matcher::{Matcher, pattern::Pattern};
 
 use crate::{config::config, arguments::arguments, icon::IconPath, xdg_utils::config_dir, log_time};
 
-use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin, session_manager::SessionPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PluginIndex(usize);
@@ -45,6 +45,10 @@ impl PluginManager {
             log_time("loading list plugin");
             let list = ListPlugin::create();
             self.plugins.insert(list.prefix.clone(), list);
+
+            log_time("loading session manager plugin");
+            let session = SessionPlugin::create();
+            self.plugins.insert(session.prefix.clone(), session);
 
             log_time("loading plugin overrides");
 

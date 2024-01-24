@@ -34,7 +34,10 @@ for_window [title="Keal"] floating enable, border none
 - [x] Frequently launched applications/plugins
 - [x] Dmenu mode (with rofi extended protocol)
 - [x] Custom plugins 
-- [ ] Built-in plugins (session, list installed plugins, ...) 
+- [x] Built-in plugins
+  - [x] Launch Application
+  - [x] List plugins
+  - [x] Manage session (log out, suspend, shutdown, ...)
 - [ ] Error feedback in UI instead of panicking/logging to stderr
 - [ ] Plugin database
 - [x] Asynchronous plugin execution
@@ -107,6 +110,7 @@ Additionally, you can edit the config parameters exposed by plugins:
 ```ini
 [Session Manager.config]
 log_out = sway exit
+suspend = $HOME/run_suspend.sh
 ```
 
 ## Plugins
@@ -123,7 +127,7 @@ comment = Manage current session # (optional) Comment shown on the right
 prefix = sm # What the user needs to type
 exec = exec.sh # Executable, from the plugin's directory
 
-# You can optionally specify plugin options:
+# Define plugin config options with their default values:
 [config]
 log_out =
 ```
