@@ -1,9 +1,34 @@
 use std::{collections::HashMap, sync::OnceLock};
+use macroquad::color::Color;
 
-use iced::{font, widget::text};
+// use iced::{font, widget::text};
 use indexmap::IndexMap;
 
 use crate::{xdg_utils::config_dir, ini_parser::Ini};
+
+#[derive(Debug, Default, Clone)]
+pub struct Theme {
+    pub background: Color,
+
+    pub input_placeholder: Color,
+    pub input_selection: Color,
+    pub input_background: Color,
+
+    pub text: Color,
+    pub matched_text: Color,
+    pub selected_matched_text: Color,
+    pub comment: Color,
+
+    pub choice_background: Color,
+    pub selected_choice_background: Color,
+    pub hovered_choice_background: Color,
+    pub pressed_choice_background: Color,
+
+    pub scrollbar_enabled: bool,
+    pub scrollbar: Color,
+    pub hovered_scrollbar: Color,
+    pub scrollbar_border_radius: f32
+}
 
 // WARN: When adding fields to the config, remember to set them in `add_from_string`!
 
@@ -11,16 +36,16 @@ use crate::{xdg_utils::config_dir, ini_parser::Ini};
 #[derive(Debug)]
 pub struct Config {
     pub font: String,
-    pub font_weight: font::Weight,
-    pub font_stretch: font::Stretch,
+    // pub font_weight: font::Weight,
+    // pub font_stretch: font::Stretch,
     pub font_size: f32,
-    pub text_shaping: text::Shaping,
+    // pub text_shaping: text::Shaping,
     pub icon_theme: Vec<String>,
     pub usage_frequency: bool,
     pub terminal_path: String,
     pub placeholder_text: String,
     pub default_plugins: Vec<String>,
-    pub theme: crate::ui::Theme,
+    pub theme: Theme,
     pub plugin_overrides: HashMap<String, Override>,
     pub plugin_configs: HashMap<String, IndexMap<String, String>>
 }
@@ -36,10 +61,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             font: String::new(),
-            font_weight: font::Weight::Normal,
-            font_stretch: font::Stretch::Normal,
+            // font_weight: font::Weight::Normal,
+            // font_stretch: font::Stretch::Normal,
             font_size: 0.0,
-            text_shaping: text::Shaping::default(),
+            // text_shaping: text::Shaping::default(),
             icon_theme: vec![],
             terminal_path: String::new(),
             placeholder_text: String::new(),
@@ -93,7 +118,7 @@ impl Config {
 
         for field in file.remove_section("keal").into_iter().flat_map(|s| s.into_iter()) {
             parse_fields!(self, field, (
-                font, font_size, font_weight, font_stretch, text_shaping, icon_theme, usage_frequency, terminal_path, placeholder_text, default_plugins
+                font, font_size, /* font_weight, font_stretch, text_shaping, */icon_theme, usage_frequency, terminal_path, placeholder_text, default_plugins
             ));
         }
 
@@ -158,56 +183,56 @@ impl<T> MyFromStr<Option<T>> for str where str: MyFromStr<T> {
     }
 }
 
-impl MyFromStr<font::Weight> for str {
-    fn my_parse(&self) -> Result<font::Weight, &str> {
-        use font::Weight as W;
-        let v = match self {
-            "extralight" => W::ExtraLight,
-            "light" => W::Light,
-            "thin" => W::Thin,
-            "regular" => W::Normal,
-            "medium" => W::Medium,
-            "semibold" => W::Semibold,
-            "bold" => W::Bold,
-            "extrabold" => W::ExtraBold,
-            "black" => W::Black,
-            _ => Err("unknown font weight")?
-        };
-        Ok(v)
-    }
-}
+// impl MyFromStr<font::Weight> for str {
+//     fn my_parse(&self) -> Result<font::Weight, &str> {
+//         use font::Weight as W;
+//         let v = match self {
+//             "extralight" => W::ExtraLight,
+//             "light" => W::Light,
+//             "thin" => W::Thin,
+//             "regular" => W::Normal,
+//             "medium" => W::Medium,
+//             "semibold" => W::Semibold,
+//             "bold" => W::Bold,
+//             "extrabold" => W::ExtraBold,
+//             "black" => W::Black,
+//             _ => Err("unknown font weight")?
+//         };
+//         Ok(v)
+//     }
+// }
 
-impl MyFromStr<font::Stretch> for str {
-    fn my_parse(&self) -> Result<iced::font::Stretch, &str> {
-        use font::Stretch as S;
-        let v = match self {
-            "ultraexpanded" => S::UltraExpanded,
-            "extraexpanded" => S::ExtraExpanded,
-            "expanded" => S::Expanded,
-            "semiexpanded" => S::SemiExpanded,
-            "normal" => S::Normal,
-            "semicondensed" => S::SemiCondensed,
-            "condensed" => S::Condensed,
-            "extracondensed" => S::ExtraCondensed,
-            "ultracondensed" => S::UltraCondensed,
-            _ => Err("unknown font stretch")?
-        };
-        Ok(v)
-    }
-}
+// impl MyFromStr<font::Stretch> for str {
+//     fn my_parse(&self) -> Result<iced::font::Stretch, &str> {
+//         use font::Stretch as S;
+//         let v = match self {
+//             "ultraexpanded" => S::UltraExpanded,
+//             "extraexpanded" => S::ExtraExpanded,
+//             "expanded" => S::Expanded,
+//             "semiexpanded" => S::SemiExpanded,
+//             "normal" => S::Normal,
+//             "semicondensed" => S::SemiCondensed,
+//             "condensed" => S::Condensed,
+//             "extracondensed" => S::ExtraCondensed,
+//             "ultracondensed" => S::UltraCondensed,
+//             _ => Err("unknown font stretch")?
+//         };
+//         Ok(v)
+//     }
+// }
 
-impl MyFromStr<text::Shaping> for str {
-    fn my_parse(&self) -> Result<text::Shaping, &str> {
-        match self {
-            "basic" => Ok(text::Shaping::Basic),
-            "advanced" => Ok(text::Shaping::Advanced),
-            _ => Err("unknown text shaping")
-        }
-    }
-}
+// impl MyFromStr<text::Shaping> for str {
+//     fn my_parse(&self) -> Result<text::Shaping, &str> {
+//         match self {
+//             "basic" => Ok(text::Shaping::Basic),
+//             "advanced" => Ok(text::Shaping::Advanced),
+//             _ => Err("unknown text shaping")
+//         }
+//     }
+// }
 
-impl MyFromStr<iced::Color> for str {
-    fn my_parse(&self) -> Result<iced::Color, &'static str> {
+impl MyFromStr<Color> for str {
+    fn my_parse(&self) -> Result<Color, &'static str> {
         let Some(Ok(r)) = self.get(0..2).map(|r| u32::from_str_radix(r, 16)) else { Err("invalid color code, mistyped or missing red channel")? };
         let Some(Ok(g)) = self.get(2..4).map(|r| u32::from_str_radix(r, 16)) else { Err("invalid color code, mistyped or missing green channel")? };
         let Some(Ok(b)) = self.get(4..6).map(|r| u32::from_str_radix(r, 16)) else { Err("invalid color code, mistyped or missing blue channel")? };
@@ -217,7 +242,7 @@ impl MyFromStr<iced::Color> for str {
             a
         } else { 255 };
 
-        Ok(iced::Color {
+        Ok(Color {
             r: r as f32 / 255.0,
             g: g as f32 / 255.0,
             b: b as f32 / 255.0,

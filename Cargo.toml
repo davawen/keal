@@ -9,8 +9,8 @@ edition = "2021"
 anyhow = "1.0.75"
 bitflags = "2.4.1"
 fork = "0.1.22"
-iced = { version = "0.10.0", features = ["image", "svg", "web-colors"] }
 indexmap = "2.1.0"
+macroquad = "0.4.7"
 nucleo-matcher = "0.2.0"
 serde = { version = "1.0.193", features = ["serde_derive"] }
 serde_cbor = "0.11.2"

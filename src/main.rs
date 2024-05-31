@@ -3,9 +3,10 @@
 use std::sync::OnceLock;
 
 use arguments::{Arguments, arguments};
-use iced::{Application, Settings, window, Font, font};
+// use iced::{Application, Settings, window, Font, font};
+use macroquad::prelude::*;
 
-mod ui;
+// mod ui;
 mod icon;
 mod config;
 mod xdg_utils;
@@ -24,7 +25,47 @@ fn log_time(s: impl ToString) {
     eprintln!("[{}.{:03}]: {}", duration.as_secs(), duration.subsec_millis(), s.to_string());
 }
 
-fn main() -> anyhow::Result<()> {
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Keal".to_owned(),
+        window_width: 1920/3,
+        window_height: 1080/2,
+        platform: miniquad::conf::Platform {
+            linux_backend: miniquad::conf::LinuxBackend::WaylandWithX11Fallback,
+            wayland_use_fallback_decorations: false,
+            framebuffer_alpha: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+fn draw_rectangle_rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
+    let left = x + radius;
+    let top = y + radius;
+
+    let right = x + w - radius;
+    let bot = y + h - radius;
+
+    let width = w - radius*2.0;
+    let height = h - radius*2.0;
+
+    draw_rectangle(left, top, width, height, color);
+
+    draw_rectangle(left, y, width, radius, color);
+    draw_rectangle(left, bot, width, radius, color);
+
+    draw_rectangle(x, top, radius, height, color);
+    draw_rectangle(right, top, radius, height, color);
+
+    draw_circle(left, top, radius, color);
+    draw_circle(right, top, radius, color);
+    draw_circle(left, bot, radius, color);
+    draw_circle(right, bot, radius, color);
+}
+
+#[macroquad::main(window_conf)]
+async fn main() -> anyhow::Result<()> {
     START.get_or_init(std::time::Instant::now);
     match Arguments::init() {
         Ok(_) => (),
@@ -38,24 +79,11 @@ fn main() -> anyhow::Result<()> {
 
     log_time("read config");
 
-    ui::Keal::run(Settings {
-        window: window::Settings {
-            size: (1920/3, 1080/2),
-            position: window::Position::Centered,
-            resizable: false,
-            decorations: false,
-            transparent: true,
-            level: window::Level::AlwaysOnTop,
-            ..Default::default()
-        },
-        default_font: Font {
-            family: font::Family::Name(config.font.clone().leak()),
-            weight: config.font_weight,
-            stretch: config.font_stretch,
-            ..Default::default()
-        },
-        ..Default::default()
-    })?;
+    loop {
+        clear_background(BLANK);
+        draw_rectangle_rounded(0.0, 0.0, screen_width(), screen_height(), 10.0, config.theme.background);
 
-    Ok(())
+
+        next_frame().await
+    }
 }
