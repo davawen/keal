@@ -122,7 +122,6 @@ pub enum Message {
     // UI events
     TextInput(String),
     Launch(Option<Label>),
-    Event(KeyCode),
 
     // Worker events
     IconCacheLoaded(IconCache),
@@ -172,13 +171,21 @@ impl Keal {
 
         for (index, (entry, wrap_info)) in entries.list.iter().zip(entries.wrap_info.iter()).enumerate() {
             let max_height = wrap_info.0.height.max(wrap_info.1.as_ref().map(|x| x.height).unwrap_or(0.0));
-            if offset_y + max_height < 0.0 { 
-                offset_y += max_height + config.font_size + 10.0;
+            let next_offset_y = offset_y + max_height + config.font_size + 10.0;
+            if next_offset_y < 0.0 { 
+                offset_y = next_offset_y;
                 continue
             }
             if offset_y > screen_height() { break }
 
             let selected = self.selected == index;
+
+            let (_, mouse_y) = mouse_position();
+            if selected {
+                draw_rectangle(0.0, offset_y, screen_width(), next_offset_y-offset_y, config.theme.selected_choice_background);
+            } else if mouse_y >= offset_y && mouse_y < next_offset_y {
+                draw_rectangle(0.0, offset_y, screen_width(), next_offset_y-offset_y, config.theme.hovered_choice_background);
+            }
 
             // if let Some(icon) = &entry.icon {
             //     if let Some(icon) = self.icons.get(icon) {
@@ -194,7 +201,7 @@ impl Keal {
             let mut name_offset_y = offset_y;
             for &line_end in &wrap_info.0.splits {
                 let text = &entry.name[line_start..line_end];
-                let mut offset = 0.0;
+                let mut offset = 10.0;
                 for (span, highlighted) in MatchSpan::new(text, &mut data.matcher, &data.pattern, &mut buf) {
                     let dims = measure_text(span, None, config.font_size as u16, font_size_ratio);
 
@@ -230,7 +237,7 @@ impl Keal {
                 }
             }
 
-            offset_y += max_height + config.font_size + 20.0;
+            offset_y = next_offset_y;
 
             // .on_press(Message::Launch(Some(entry.label)))
         }
@@ -251,23 +258,20 @@ impl Keal {
             self.old_screen_width = screen_width();
         }
 
+        // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
+        let ctrl = is_key_down(KeyCode::LeftControl);
+        if is_key_pressed(KeyCode::Down) || (ctrl && is_key_pressed(KeyCode::J)) || (ctrl && is_key_pressed(KeyCode::N)) {
+            // TODO: gently scroll window to selected choice
+            self.selected += 1;
+            self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
+        }
+        if is_key_pressed(KeyCode::Up) || (ctrl && is_key_pressed(KeyCode::K)) || (ctrl && is_key_pressed(KeyCode::P)) {
+            self.selected = self.selected.saturating_sub(1);
+        }
+
         let Some(message) = self.manager.poll() else { return };
 
         match message {
-            // Message::Event(event) => match event {
-            //     KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
-            //     // TODO: gently scroll window to selected choice
-            //     KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::N, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
-            //         self.selected += 1;
-            //         self.selected = self.selected.min(self.entries.len().saturating_sub(1));
-            //     }
-            //     KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::P, modifiers: Modifiers::CTRL }
-            //     | KeyPressed { key_code: KeyCode::Up, .. } => {
-            //         self.selected = self.selected.saturating_sub(1);
-            //     }
-            //     _ => ()
-            // }
-            Message::Event(_) => (),
             Message::TextInput(input) => self.update_input(input, true),
             Message::Launch(selected) => {
                 self.manager.send(async_manager::Event::Launch(selected));
