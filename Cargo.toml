@@ -14,4 +14,5 @@ macroquad = "0.4.7"
 nucleo-matcher = "0.2.0"
 serde = { version = "1.0.193", features = ["serde_derive"] }
 serde_cbor = "0.11.2"
+smallvec = "1.13.2"
 walkdir = "2.4.0"

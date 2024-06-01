@@ -1,5 +1,4 @@
-use std::sync::{Mutex, Arc, MutexGuard};
-use iced::{subscription::{Subscription, self }, futures::{channel::mpsc, SinkExt, StreamExt}};
+use std::sync::{mpsc::{channel, Receiver, Sender, TryRecvError}, Arc, Mutex, MutexGuard};
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
@@ -13,6 +12,9 @@ pub enum Event {
 }
 
 pub struct AsyncManager {
+    event_sender: Sender<Event>,
+    message_rec: Receiver<Message>,
+
     manager: Arc<Mutex<PluginManager>>,
 
     // data used to regenerate entries
@@ -28,14 +30,29 @@ pub struct Data {
 }
 
 impl AsyncManager {
-    pub fn subscription(&self) -> Subscription<super::Message> {
-        let manager = self.manager.clone();
+    pub fn new(matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
+        let (event_sender, event_rec) = channel();
+        let (message_sender, message_rec) = channel();
 
-        let data = self.data.clone();
-        let num_entries = self.num_entries;
-        let sort_by_usage = self.sort_by_usage;
+        let this = Self {
+            event_sender,
+            message_rec,
+            manager: Default::default(),
+            data: Arc::new(Mutex::new(Data {
+                matcher,
+                query: String::default(),
+                pattern: Pattern::default(),
+            })),
+            num_entries, sort_by_usage,
+        };
 
-        subscription::channel("manager", 50, move |mut output| async move {
+        let manager = this.manager.clone();
+
+        let data = this.data.clone();
+        let num_entries = this.num_entries;
+        let sort_by_usage = this.sort_by_usage;
+
+        std::thread::spawn(move || {
             {
                 log_time("locking sync manager");
                 let mut manager = manager.lock().unwrap();
@@ -44,11 +61,8 @@ impl AsyncManager {
                 manager.load_plugins();
             }
 
-            let (sender, mut reciever) = mpsc::channel(50);
-            output.send(Message::SenderLoaded(sender)).await.unwrap();
-
             loop {
-                let event = reciever.select_next_some().await;
+                let Ok(event) = event_rec.recv() else { break };
 
                 match event {
                     Event::UpdateInput(s, from_user) => {
@@ -64,8 +78,8 @@ impl AsyncManager {
                             (entries, action)
                         };
 
-                        output.send(Message::Entries(entries)).await.unwrap();
-                        output.send(Message::Action(action)).await.unwrap();
+                        message_sender.send(Message::Entries(entries)).unwrap();
+                        message_sender.send(Message::Action(action)).unwrap();
                     }
                     Event::Launch(label) => {
                         let action = {
@@ -73,22 +87,24 @@ impl AsyncManager {
                             let data = data.lock().unwrap();
                             manager.launch(&data.query, label)
                         };
-                        output.send(Message::Action(action)).await.unwrap();
+                        message_sender.send(Message::Action(action)).unwrap();
                     }
                 }
             }
-        })
+        });
+
+        this
     }
 
-    pub fn new(matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
-        Self {
-            manager: Default::default(),
-            data: Arc::new(Mutex::new(Data {
-                matcher,
-                query: String::default(),
-                pattern: Pattern::default(),
-            })),
-            num_entries, sort_by_usage,
+    pub fn send(&self, event: Event) {
+        self.event_sender.send(event);
+    }
+
+    pub fn poll(&self) -> Option<Message> {
+        match self.message_rec.try_recv() {
+            Ok(message) => Some(message),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => panic!("manager channel disconnected")
         }
     }
 

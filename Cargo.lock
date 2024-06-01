@@ -196,6 +196,7 @@ dependencies = [
  "nucleo-matcher",
  "serde",
  "serde_cbor",
+ "smallvec",
  "walkdir",
 ]
 
@@ -416,6 +417,12 @@ checksum = "e1e08e261d0e8f5c43123b7adf3e4ca1690d655377ac93a03b2c9d3e98de1342"
 dependencies = [
  "version_check",
 ]
+
+[[package]]
+name = "smallvec"
+version = "1.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "syn"

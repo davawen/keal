@@ -5,8 +5,9 @@ use std::sync::OnceLock;
 use arguments::{Arguments, arguments};
 // use iced::{Application, Settings, window, Font, font};
 use macroquad::prelude::*;
+use ui::Keal;
 
-// mod ui;
+mod ui;
 mod icon;
 mod config;
 mod xdg_utils;
@@ -79,11 +80,20 @@ async fn main() -> anyhow::Result<()> {
 
     log_time("read config");
 
+    let mut keal = Keal::new();
+
+    log_time("entering drawing loop");
+
+    keal.update_input(String::new(), true);
+
     loop {
         clear_background(BLANK);
         draw_rectangle_rounded(0.0, 0.0, screen_width(), screen_height(), 10.0, config.theme.background);
 
+        keal.render();
 
-        next_frame().await
+        next_frame().await;
+
+        keal.update();
     }
 }
