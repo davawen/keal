@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use arguments::{Arguments, arguments};
 // use iced::{Application, Settings, window, Font, font};
-use macroquad::prelude::*;
+use macroquad::{miniquad::window::{order_quit, quit, request_quit}, prelude::*, ui::{hash, root_ui, widgets::Window}};
 use ui::Keal;
 
 mod ui;
@@ -32,7 +32,7 @@ fn window_conf() -> Conf {
         window_width: 1920/3,
         window_height: 1080/2,
         platform: miniquad::conf::Platform {
-            linux_backend: miniquad::conf::LinuxBackend::WaylandWithX11Fallback,
+            linux_backend: miniquad::conf::LinuxBackend::X11WithWaylandFallback,
             wayland_use_fallback_decorations: false,
             framebuffer_alpha: true,
             ..Default::default()

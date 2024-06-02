@@ -1,4 +1,4 @@
-use std::sync::{mpsc::{channel, Receiver, Sender, TryRecvError}, Arc, Mutex, MutexGuard};
+use std::sync::{mpsc::{channel, Sender}, Arc, Mutex, MutexGuard};
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
@@ -13,7 +13,6 @@ pub enum Event {
 
 pub struct AsyncManager {
     event_sender: Sender<Event>,
-    message_rec: Receiver<Message>,
 
     manager: Arc<Mutex<PluginManager>>,
 
@@ -30,13 +29,11 @@ pub struct Data {
 }
 
 impl AsyncManager {
-    pub fn new(matcher: Matcher, num_entries: usize, sort_by_usage: bool) -> Self {
+    pub fn new(matcher: Matcher, num_entries: usize, sort_by_usage: bool, message_sender: Sender<Message>) -> Self {
         let (event_sender, event_rec) = channel();
-        let (message_sender, message_rec) = channel();
 
         let this = Self {
             event_sender,
-            message_rec,
             manager: Default::default(),
             data: Arc::new(Mutex::new(Data {
                 matcher,
@@ -97,15 +94,7 @@ impl AsyncManager {
     }
 
     pub fn send(&self, event: Event) {
-        self.event_sender.send(event);
-    }
-
-    pub fn poll(&self) -> Option<Message> {
-        match self.message_rec.try_recv() {
-            Ok(message) => Some(message),
-            Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => panic!("manager channel disconnected")
-        }
+        let _ = self.event_sender.send(event);
     }
 
     /// Use the plugin manager mutably and synchronously
