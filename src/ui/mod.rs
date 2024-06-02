@@ -67,14 +67,16 @@ struct WrapInfo {
 struct Entries {
     list: Vec<OwnedEntry>,
     /// info for entry.name and entry.comment (optional)
-    wrap_info: Vec<(WrapInfo, Option<WrapInfo>)>
+    wrap_info: Vec<(WrapInfo, Option<WrapInfo>)>,
+    total_height: f32
 }
 
 impl Entries {
     fn new(list: Vec<OwnedEntry>, font: Option<&Font>) -> Self {
         let mut this = Self {
             list,
-            wrap_info: Vec::new()
+            wrap_info: Vec::new(),
+            total_height: 0.0
         };
 
         this.recalculate(font);
@@ -85,13 +87,18 @@ impl Entries {
     fn recalculate(&mut self, font: Option<&Font>) {
         let config = config();
 
+        self.total_height = 0.0;
         self.wrap_info.clear();
         self.wrap_info.extend(self.list.iter().map(|entry| {
             let name = measure_text_wrap(&entry.name, screen_width()/2.0, font, config.font_size, 5.0);
+            let mut max_height = name.height;
 
             let comment_width = screen_width() - name.width - 10.0 - 20.0 - 10.0; // this removes: name left padding, name-comment inner padding, comment right padding
             let comment = entry.comment.as_ref()
-                .map(|comment| measure_text_wrap(comment, comment_width, font, config.font_size, 5.0));
+                .map(|comment| measure_text_wrap(comment, comment_width, font, config.font_size, 5.0))
+                .inspect(|comment| max_height = max_height.max(comment.height));
+
+            self.total_height += max_height + 20.0;
 
             (name, comment)
         }));
@@ -180,9 +187,12 @@ impl Keal {
 
         // TODO: scrollbar
 
-        self.scroll += mouse_wheel().1;
+        let search_bar_height = (config.font_size*3.25).ceil();
 
-        let mut offset_y = (config.font_size*3.25).ceil() + 10.0 + self.scroll*20.0;
+        self.scroll += mouse_wheel().1*20.0;
+        self.scroll = clamp(self.scroll, screen_height()-self.entries.total_height - search_bar_height, 0.0);
+
+        let mut offset_y = search_bar_height + self.scroll;
 
         set_mouse_cursor(CursorIcon::Default);
         for (index, (entry, wrap_info)) in entries.list.iter().zip(entries.wrap_info.iter()).enumerate() {
