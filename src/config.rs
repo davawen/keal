@@ -1,5 +1,5 @@
 use std::{collections::HashMap, sync::OnceLock};
-use macroquad::color::Color;
+use raylib::math::color::Color;
 
 // use iced::{font, widget::text};
 use indexmap::IndexMap;
@@ -243,10 +243,10 @@ impl MyFromStr<Color> for str {
         } else { 255 };
 
         Ok(Color {
-            r: r as f32 / 255.0,
-            g: g as f32 / 255.0,
-            b: b as f32 / 255.0,
-            a: a as f32 / 255.0
+            r: r as u8,
+            g: g as u8,
+            b: b as u8,
+            a: a as u8
         })
     }
 }

@@ -1,8 +1,7 @@
 use std::{os::unix::process::CommandExt, sync::mpsc::{channel, Receiver, Sender, TryRecvError}};
 
 use fork::{fork, Fork};
-// use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}, futures::channel::mpsc};
-use macroquad::{miniquad::{window::set_mouse_cursor, CursorIcon}, prelude::*};
+use raylib::prelude::*;
 use nucleo_matcher::Matcher;
 use smallvec::SmallVec;
 
@@ -17,8 +16,10 @@ mod styled;
 mod match_span;
 mod async_manager;
 
+type TTFAtlas<'a> = TrueTypeFontAtlas<'a>;
+
 /// Returns a vector of indices (byte offsets) at which the text should wrap, as well as the total height of the text
-fn measure_text_wrap(text: &str, max_width: f32, font: Option<&Font>, font_size: f32, line_height: f32) -> WrapInfo {
+fn measure_text_wrap(d: &mut DrawHandle, text: &str, max_width: f32, atlas: &mut TTFAtlas, font_size: f32, line_height: f32) -> WrapInfo {
     let max_width = max_width.max(font_size*2.0);
 
     let mut splits = SmallVec::new();
@@ -31,9 +32,9 @@ fn measure_text_wrap(text: &str, max_width: f32, font: Option<&Font>, font_size:
     let mut iter = text.char_indices();
     iter.next();
     for (index, c) in iter {
-        let dims = measure_text(&text[last..index], font, font_size as u16, 1.0);
+        let dims = d.measure_text(atlas, &text[last..index], font_size);
 
-        if c == '\n' || running_width + dims.width >= max_width {
+        if c == '\n' || running_width + dims.x >= max_width {
             line_start = index;
             running_width = 0.0;
 
@@ -41,13 +42,13 @@ fn measure_text_wrap(text: &str, max_width: f32, font: Option<&Font>, font_size:
             splits.push(last);
         } 
 
-        running_width += dims.width;
+        running_width += dims.x;
         last = index;
     }
 
     if line_start < text.len() {
-        let dims = measure_text(&text[last..], font, font_size as u16, 1.0);
-        running_width += dims.width;
+        let dims = d.measure_text(atlas, &text[last..], font_size);
+        running_width += dims.x;
 
         splits.push(text.len());
     }
@@ -72,30 +73,30 @@ struct Entries {
 }
 
 impl Entries {
-    fn new(list: Vec<OwnedEntry>, font: Option<&Font>) -> Self {
+    fn new(list: Vec<OwnedEntry>, rl: &mut Raylib, d: &mut DrawHandle, atlas: &mut TTFAtlas) -> Self {
         let mut this = Self {
             list,
             wrap_info: Vec::new(),
             total_height: 0.0
         };
 
-        this.recalculate(font);
+        this.recalculate(rl, d, atlas);
         this
     }
 
     /// call this when the screen width changes
-    fn recalculate(&mut self, font: Option<&Font>) {
+    fn recalculate(&mut self, rl: &mut Raylib, d: &mut DrawHandle, font: &mut TTFAtlas) {
         let config = config();
 
         self.total_height = 0.0;
         self.wrap_info.clear();
         self.wrap_info.extend(self.list.iter().map(|entry| {
-            let name = measure_text_wrap(&entry.name, screen_width()/2.0, font, config.font_size, 5.0);
+            let name = measure_text_wrap(d, &entry.name, rl.get_render_width()/2.0, font, config.font_size, 5.0);
             let mut max_height = name.height;
 
-            let comment_width = screen_width() - name.width - 10.0 - 20.0 - 10.0; // this removes: name left padding, name-comment inner padding, comment right padding
+            let comment_width = rl.get_render_width() - name.width - 10.0 - 20.0 - 10.0; // this removes: name left padding, name-comment inner padding, comment right padding
             let comment = entry.comment.as_ref()
-                .map(|comment| measure_text_wrap(comment, comment_width, font, config.font_size, 5.0))
+                .map(|comment| measure_text_wrap(d, comment, comment_width, font, config.font_size, 5.0))
                 .inspect(|comment| max_height = max_height.max(comment.height));
 
             self.total_height += max_height + 20.0;
@@ -105,17 +106,25 @@ impl Entries {
     }
 }
 
-pub struct Keal {
+pub struct Keal<'a> {
+    pub quit: bool,
+
     // UI state
     input: String,
-    selected: usize,
+    /// byte index of the cursor in the text input, None if the input is not selected
+    cursor_index: Option<usize>,
+    cursor_tick: usize,
     scroll: f32,
+
+    selected: usize,
+    hovered_choice: Option<usize>,
+    input_hovered: bool,
 
     old_screen_width: f32,
 
     // data state
     icons: IconCache,
-    font: Option<Font>,
+    atlas: TTFAtlas<'a>,
 
     entries: Entries,
     manager: AsyncManager,
@@ -127,7 +136,6 @@ pub struct Keal {
 #[derive(Debug, Clone)]
 pub enum Message {
     // UI events
-    TextInput(String),
     Launch(Option<Label>),
 
     // Worker events
@@ -136,16 +144,15 @@ pub enum Message {
     Action(Action)
 }
 
-impl Keal {
-    pub fn new() -> Self {
+impl<'a> Keal<'a> {
+    pub fn new(rl: &mut Raylib, font: &'a TrueTypeFont) -> Self {
         log_time("initializing app");
 
         let config = config();
 
         let (message_sender, message_rec) = channel();
 
-        let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
-        let iosevka = load_ttf_font_from_bytes(iosevka).expect("failed to load font");
+        let atlas = font.atlas(rl, config.font_size);
         log_time("finished loading font");
 
         {
@@ -161,12 +168,17 @@ impl Keal {
         log_time("finished initializing");
 
         Keal {
+            quit: false,
             input: String::new(),
-            selected: 0,
+            cursor_index: None,
+            cursor_tick: 0,
             scroll: 0.0,
+            selected: 0,
+            hovered_choice: None,
+            input_hovered: false,
             old_screen_width: 0.0,
             icons: Default::default(),
-            font: Some(iosevka),
+            atlas,
             entries: Default::default(),
             manager,
             message_sender,
@@ -174,13 +186,12 @@ impl Keal {
         }
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, rl: &mut Raylib, draw: &mut DrawHandle) {
         let entries = &self.entries;
         let config = config();
 
-        let font = self.font.as_ref();
-        let font_size = config.font_size as u16;
-        // let font_size_ratio = config.font_size / config.font_size.floor();
+        let font = &mut self.atlas;
+        let font_size = config.font_size;
 
         let data = &mut *self.manager.get_data();
         let mut buf = vec![];
@@ -188,13 +199,14 @@ impl Keal {
         // TODO: scrollbar
 
         let search_bar_height = (config.font_size*3.25).ceil();
+        let mouse = rl.get_mouse_pos();
 
-        self.scroll += mouse_wheel().1*20.0;
-        self.scroll = clamp(self.scroll, screen_height()-self.entries.total_height - search_bar_height, 0.0);
+        self.scroll += rl.get_mouse_wheel_move()*20.0;
+        // self.scroll = self.scroll.clamp(rl.get_render_height()-self.entries.total_height - search_bar_height, 0.0);
+        self.hovered_choice = None;
 
         let mut offset_y = search_bar_height + self.scroll;
 
-        set_mouse_cursor(CursorIcon::Default);
         for (index, (entry, wrap_info)) in entries.list.iter().zip(entries.wrap_info.iter()).enumerate() {
             let max_height = wrap_info.0.height.max(wrap_info.1.as_ref().map(|x| x.height).unwrap_or(0.0));
             let next_offset_y = offset_y + max_height + 20.0;
@@ -202,19 +214,18 @@ impl Keal {
                 offset_y = next_offset_y;
                 continue
             }
-            if offset_y > screen_height() { break }
+            if offset_y > rl.get_render_height() { break }
 
             let selected = self.selected == index;
 
-            let (_, mouse_y) = mouse_position();
-            if mouse_y >= offset_y && mouse_y < next_offset_y {
-                set_mouse_cursor(CursorIcon::Pointer);
+            if mouse.y >= offset_y && mouse.y < next_offset_y {
+                self.hovered_choice = Some(index);
                 if !selected {
-                    draw_rectangle(0.0, offset_y, screen_width(), next_offset_y-offset_y, config.theme.hovered_choice_background);
+                    draw.rectangle(0.0, offset_y, rl.get_render_width(), next_offset_y-offset_y, config.theme.hovered_choice_background);
                 }
             }
             if selected {
-                draw_rectangle(0.0, offset_y, screen_width(), next_offset_y-offset_y, config.theme.selected_choice_background);
+                draw.rectangle(0.0, offset_y, rl.get_render_width(), next_offset_y-offset_y, config.theme.selected_choice_background);
             } 
 
             // if let Some(icon) = &entry.icon {
@@ -235,7 +246,7 @@ impl Keal {
 
                 let mut offset = 10.0;
                 for (span, highlighted) in MatchSpan::new(text, &mut data.matcher, &data.pattern, &mut buf) {
-                    let dims = measure_text(span, None, config.font_size as u16, 1.0);
+                    let dims = draw.measure_text(font, span, config.font_size);
 
                     let color = match highlighted {
                         false => config.theme.text,
@@ -245,8 +256,8 @@ impl Keal {
                         }
                     };
 
-                    draw_text_ex(span, offset, (name_offset_y + config.font_size).ceil(), TextParams { font, font_size, color, ..Default::default() });
-                    offset += dims.width;
+                    draw.text(font, span, vec2(offset, name_offset_y.ceil()), font_size, color);
+                    offset += dims.x;
                 }
 
                 name_offset_y += config.font_size + 5.0;
@@ -263,66 +274,147 @@ impl Keal {
                 for &line_end in &wrap_info.splits {
                     let text = &comment[line_start..line_end];
 
-                    draw_text_ex(text, screen_width() - wrap_info.width - 10.0, comment_offset_y + config.font_size, TextParams { font, font_size, color: config.theme.comment, ..Default::default() });
+                    draw.text(font, text, vec2(rl.get_render_width() - wrap_info.width - 10.0, comment_offset_y), font_size, config.theme.comment);
                     comment_offset_y += config.font_size + 5.0;
                     line_start = line_end;
                 }
             }
 
             offset_y = next_offset_y;
-
-            // .on_press(Message::Launch(Some(entry.label)))
         }
 
-        let height = (config.font_size * 3.25).ceil();
-        let text = if self.input.is_empty() { &config.placeholder_text } else { &self.input };
+        // input
+        {
+            let text = if self.input.is_empty() && self.cursor_index.is_none() { &config.placeholder_text } else { &self.input };
 
-        let size = (config.font_size*1.25) as u16;
-        let dims = measure_text(text, None, size, 1.0);
+            let size = config.font_size*1.25;
 
-        draw_rectangle(0.0, 0.0, screen_width(), height, config.theme.input_background);
-        draw_text_ex(&text, config.font_size, height/2.0 - dims.offset_y + dims.height, TextParams { font, font_size: size, color: config.theme.text, ..Default::default() });
+            let left_padding = config.font_size;
+            let baseline = (search_bar_height/2.0 - size/2.0).ceil();
+
+            draw.rectangle(0.0, 0.0, rl.get_render_width(), search_bar_height, config.theme.input_background);
+            draw.text(font, &text, vec2(left_padding, baseline), size, config.theme.text);
+
+            if let Some(cursor_index) = self.cursor_index {
+                let cursor_position = if self.input.is_empty() {
+                    0.0
+                } else { draw.measure_text(font, &text[0..cursor_index], size).x };
+
+                if self.cursor_tick % 120 < 60 {
+                    draw.rectangle(left_padding + cursor_position - 1.0, baseline - 5.0, 2.0, size + 10.0, Color::LIGHTGRAY);
+                }
+            }
+
+            self.input_hovered = mouse.y >= 0.0 && mouse.y < search_bar_height;
+        }
     }
 
-    pub fn update(&mut self) {
-        if self.old_screen_width != screen_width() {
-            self.entries.recalculate(self.font.as_ref());
-            self.old_screen_width = screen_width();
+    pub fn update(&mut self, rl: &mut Raylib, draw: &mut DrawHandle) {
+        if self.old_screen_width != rl.get_render_width() {
+            self.entries.recalculate(rl, draw, &mut self.atlas);
+            self.old_screen_width = rl.get_render_width();
+        }
+
+        if let Some(hovered_choice) = self.hovered_choice {
+            rl.set_mouse_cursor(MouseCursor::PointingHand);
+
+            if rl.is_mouse_button_pressed(MouseButton::Left) {
+                self.message_sender.send(Message::Launch(Some(self.entries.list[hovered_choice].label))).expect("message reciever destroyed");
+            }
+        } else if self.input_hovered {
+            rl.set_mouse_cursor(MouseCursor::Ibeam);
+
+            if rl.is_mouse_button_pressed(MouseButton::Left) {
+                self.cursor_index = Some(0);
+            }
+        } else {
+            rl.set_mouse_cursor(MouseCursor::Default);
+        }
+
+        if rl.is_key_pressed(KeyboardKey::Enter) {
+            let _ = self.message_sender.send(Message::Launch(Some(self.entries.list[self.selected].label)));
+        }
+
+        if let Some(cursor_index) = &mut self.cursor_index {
+            self.cursor_tick += 1;
+
+            let mut modified = false;
+            while let Some(ch) = rl.get_char_pressed() {
+                self.input.insert(*cursor_index, ch);
+                *cursor_index += ch.len_utf8();
+
+                self.cursor_tick = 0;
+                modified = true;
+            }
+
+            while let Some(key) = rl.get_key_pressed() {
+                match key {
+                    KeyboardKey::Left if *cursor_index > 0 => {
+                        *cursor_index -= 1;
+                        while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
+                            *cursor_index -= 1;
+                        }
+                    }
+                    KeyboardKey::Right if *cursor_index < self.input.len() => {
+                        *cursor_index += 1;
+                        while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
+                            *cursor_index += 1;
+                        }
+                    }
+                    KeyboardKey::Backspace if *cursor_index > 0 => {
+                        *cursor_index -= 1;
+                        while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
+                            *cursor_index -= 1;
+                        }
+                        self.input.remove(*cursor_index);
+                        modified = true;
+                    }
+                    _ => ()
+                }
+                self.cursor_tick = 0;
+            }
+
+            if modified {
+                self.update_input(true);
+            }
+
+        } else {
+            self.cursor_tick = 0;
         }
 
         // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
-        let ctrl = is_key_down(KeyCode::LeftControl);
-        if is_key_pressed(KeyCode::Down) || (ctrl && is_key_pressed(KeyCode::J)) || (ctrl && is_key_pressed(KeyCode::N)) {
+        let ctrl = rl.is_key_down(KeyboardKey::LeftControl);
+        if rl.is_key_pressed(KeyboardKey::Down) || (ctrl && rl.is_key_pressed(KeyboardKey::J)) || (ctrl && rl.is_key_pressed(KeyboardKey::N)) {
             // TODO: gently scroll window to selected choice
             self.selected += 1;
             self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
         }
-        if is_key_pressed(KeyCode::Up) || (ctrl && is_key_pressed(KeyCode::K)) || (ctrl && is_key_pressed(KeyCode::P)) {
+        if rl.is_key_pressed(KeyboardKey::Up) || (ctrl && rl.is_key_pressed(KeyboardKey::K)) || (ctrl && rl.is_key_pressed(KeyboardKey::P)) {
             self.selected = self.selected.saturating_sub(1);
         }
 
-        let message = match self.message_rec.try_recv() {
-            Ok(message) => message,
-            Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => panic!("manager channel disconnected")
-        };
+        loop {
+            let message = match self.message_rec.try_recv() {
+                Ok(message) => message,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => panic!("manager channel disconnected")
+            };
 
-        match message {
-            Message::TextInput(input) => self.update_input(input, true),
-            Message::Launch(selected) => {
-                self.manager.send(async_manager::Event::Launch(selected));
-            }
-            Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
-            Message::Entries(entries) => self.entries = Entries::new(entries, self.font.as_ref()),
-            Message::Action(action) => return self.handle_action(action),
-        };
+            match message {
+                Message::Launch(selected) => {
+                    self.manager.send(async_manager::Event::Launch(selected));
+                }
+                Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
+                Message::Entries(entries) => self.entries = Entries::new(entries, rl, draw, &mut self.atlas),
+                Message::Action(action) => return self.handle_action(action),
+            };
+        }
     }
 }
 
-impl Keal {
-    pub fn update_input(&mut self, input: String, from_user: bool) {
-        self.input = input.clone();
-        self.manager.send(async_manager::Event::UpdateInput(input, from_user));
+impl Keal<'_> {
+    pub fn update_input(&mut self, from_user: bool) {
+        self.manager.send(async_manager::Event::UpdateInput(self.input.clone(), from_user));
     }
 
     fn handle_action(&mut self, action: Action) /* -> Command<Message> */ {
@@ -330,32 +422,34 @@ impl Keal {
             Action::None => (),
             Action::ChangeInput(new) => {
                 self.manager.with_manager(|m| m.kill());
-                self.update_input(new, false);
+                self.input = new;
+                self.update_input(false);
                 // return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
             Action::ChangeQuery(new) => {
                 let new = self.manager.use_manager(|m| m.current().map(
                     |plugin| format!("{} {}", plugin.prefix, new) 
                 )).unwrap_or(new);
-                self.update_input(new, false);
+                self.input = new;
+                self.update_input(false);
 
                 // return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
             Action::Exec(mut command) => {
                 let _ = command.0.exec();
-                // return iced::window::close();
+                self.quit = true;
             }
             Action::PrintAndClose(message) => {
                 println!("{message}");
-                // return iced::window::close();
+                self.quit = true;
             }
             Action::Fork => match fork().expect("failed to fork") {
-                Fork::Parent(_) => (),//return iced::window::close(),
+                Fork::Parent(_) => self.quit = true,
                 Fork::Child => ()
             }
             Action::WaitAndClose => {
                 self.manager.with_manager(|m| m.wait());
-                // return iced::window::close();
+                self.quit = true;
             }
         }
     }

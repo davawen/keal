@@ -3,9 +3,8 @@
 use std::sync::OnceLock;
 
 use arguments::{Arguments, arguments};
-// use iced::{Application, Settings, window, Font, font};
-use macroquad::{miniquad::window::{order_quit, quit, request_quit}, prelude::*, ui::{hash, root_ui, widgets::Window}};
 use ui::Keal;
+use raylib::prelude::*;
 
 mod ui;
 mod icon;
@@ -26,22 +25,7 @@ fn log_time(s: impl ToString) {
     eprintln!("[{}.{:03}]: {}", duration.as_secs(), duration.subsec_millis(), s.to_string());
 }
 
-fn window_conf() -> Conf {
-    Conf {
-        window_title: "Keal".to_owned(),
-        window_width: 1920/3,
-        window_height: 1080/2,
-        platform: miniquad::conf::Platform {
-            linux_backend: miniquad::conf::LinuxBackend::X11WithWaylandFallback,
-            wayland_use_fallback_decorations: false,
-            framebuffer_alpha: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
-
-fn draw_rectangle_rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
+fn draw_rectangle_rounded(draw: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
     let left = x + radius;
     let top = y + radius;
 
@@ -51,22 +35,21 @@ fn draw_rectangle_rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, color: Co
     let width = w - radius*2.0;
     let height = h - radius*2.0;
 
-    draw_rectangle(left, top, width, height, color);
+    draw.rectangle(left, top, width, height, color);
 
-    draw_rectangle(left, y, width, radius, color);
-    draw_rectangle(left, bot, width, radius, color);
+    draw.rectangle(left, y, width, radius, color);
+    draw.rectangle(left, bot, width, radius, color);
 
-    draw_rectangle(x, top, radius, height, color);
-    draw_rectangle(right, top, radius, height, color);
+    draw.rectangle(x, top, radius, height, color);
+    draw.rectangle(right, top, radius, height, color);
 
-    draw_circle(left, top, radius, color);
-    draw_circle(right, top, radius, color);
-    draw_circle(left, bot, radius, color);
-    draw_circle(right, bot, radius, color);
+    draw.circle(left, top, radius, color);
+    draw.circle(right, top, radius, color);
+    draw.circle(left, bot, radius, color);
+    draw.circle(right, bot, radius, color);
 }
 
-#[macroquad::main(window_conf)]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     START.get_or_init(std::time::Instant::now);
     match Arguments::init() {
         Ok(_) => (),
@@ -80,20 +63,28 @@ async fn main() -> anyhow::Result<()> {
 
     log_time("read config");
 
-    let mut keal = Keal::new();
+    let mut rl = Raylib::init_window(1920/3, 1080/2, "Keal", 60);
+    rl.set_window_state(ConfigFlags::FLAG_WINDOW_UNDECORATED | ConfigFlags::FLAG_WINDOW_RESIZABLE);
+
+    let iosevka = include_bytes!("../public/iosevka-regular.ttf");
+    let iosevka = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
+    let mut keal = Keal::new(&mut rl, &iosevka);
 
     log_time("entering drawing loop");
 
-    keal.update_input(String::new(), true);
+    keal.update_input(true);
 
-    loop {
-        clear_background(BLANK);
-        draw_rectangle_rounded(0.0, 0.0, screen_width(), screen_height(), 10.0, config.theme.background);
+    while !rl.window_should_close() {
+        rl.begin_drawing(|rl, draw| {
+            draw.clear_background(config.theme.background);
+            // draw_rectangle_rounded(draw, 0.0, 0.0, rl.get_render_width(), rl.get_render_height(), 10.0, config.theme.background);
 
-        keal.render();
+            keal.render(rl, draw);
+            keal.update(rl, draw);
+        });
 
-        next_frame().await;
-
-        keal.update();
+        if keal.quit { break }
     }
+
+    Ok(())
 }

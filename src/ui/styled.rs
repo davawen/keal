@@ -1,4 +1,4 @@
-use macroquad::color::Color;
+use raylib::math::color::Color;
 
 /// Workaround for the iced `color!` macro not supporting const contexts
 #[macro_export]
