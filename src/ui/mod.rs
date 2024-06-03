@@ -172,7 +172,7 @@ impl<'a> Keal<'a> {
         Keal {
             quit: false,
             input: String::new(),
-            cursor_index: None,
+            cursor_index: Some(0),
             cursor_tick: 0,
             scroll: 0.0,
             selected: 0,
@@ -302,8 +302,8 @@ impl<'a> Keal<'a> {
                     0.0
                 } else { draw.measure_text(font, &text[0..cursor_index], size).x };
 
-                if self.cursor_tick % 120 < 60 {
-                    draw.rectangle(left_padding + cursor_position - 1.0, baseline - 5.0, 2.0, size + 10.0, Color::LIGHTGRAY);
+                if self.cursor_tick % 60 < 30 {
+                    draw.rectangle(left_padding + cursor_position - 1.0, baseline, 1.0, size + 5.0, Color::WHITE);
                 }
             }
 
