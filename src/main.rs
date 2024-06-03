@@ -79,8 +79,8 @@ fn main() -> anyhow::Result<()> {
             draw.clear_background(config.theme.background);
             // draw_rectangle_rounded(draw, 0.0, 0.0, rl.get_render_width(), rl.get_render_height(), 10.0, config.theme.background);
 
-            keal.render(rl, draw);
             keal.update(rl, draw);
+            keal.render(rl, draw);
         });
 
         if keal.quit { break }

@@ -125,6 +125,7 @@ pub struct Keal<'a> {
     // data state
     icons: IconCache,
     atlas: TTFAtlas<'a>,
+    atlas_big: TTFAtlas<'a>,
 
     entries: Entries,
     manager: AsyncManager,
@@ -153,6 +154,7 @@ impl<'a> Keal<'a> {
         let (message_sender, message_rec) = channel();
 
         let atlas = font.atlas(rl, config.font_size);
+        let atlas_big = font.atlas(rl, config.font_size * 1.25);
         log_time("finished loading font");
 
         {
@@ -179,6 +181,7 @@ impl<'a> Keal<'a> {
             old_screen_width: 0.0,
             icons: Default::default(),
             atlas,
+            atlas_big,
             entries: Default::default(),
             manager,
             message_sender,
@@ -246,8 +249,6 @@ impl<'a> Keal<'a> {
 
                 let mut offset = 10.0;
                 for (span, highlighted) in MatchSpan::new(text, &mut data.matcher, &data.pattern, &mut buf) {
-                    let dims = draw.measure_text(font, span, config.font_size);
-
                     let color = match highlighted {
                         false => config.theme.text,
                         true => match selected {
@@ -256,8 +257,8 @@ impl<'a> Keal<'a> {
                         }
                     };
 
-                    draw.text(font, span, vec2(offset, name_offset_y.ceil()), font_size, color);
-                    offset += dims.x;
+                    let new_pos = draw.text(font, span, vec2(offset, name_offset_y.ceil()), font_size, color);
+                    offset = new_pos.x;
                 }
 
                 name_offset_y += config.font_size + 5.0;
@@ -285,6 +286,7 @@ impl<'a> Keal<'a> {
 
         // input
         {
+            let font = &mut self.atlas_big;
             let text = if self.input.is_empty() && self.cursor_index.is_none() { &config.placeholder_text } else { &self.input };
 
             let size = config.font_size*1.25;
