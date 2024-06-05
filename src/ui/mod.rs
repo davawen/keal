@@ -18,6 +18,10 @@ mod async_manager;
 
 type TTFAtlas<'a> = TrueTypeFontAtlas<'a>;
 
+fn is_key_pressed_repeated(rl: &mut Raylib, key: KeyboardKey) -> bool {
+    rl.is_key_pressed(key) || rl.is_key_pressed_again(key)
+}
+
 /// order of border radius is: `[top-left, top-right, bot-left, bot-right]`
 fn draw_rectangle_rounded(rl: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, mut borders: [f32; 4], color: Color) {
     for radius in &mut borders {
@@ -278,7 +282,11 @@ impl<'a> Keal<'a> {
                 } else if let Some(icon) = self.icons.get(icon_path) {
                     match icon {
                         Icon::Svg(path) | Icon::Other(path) => {
-                            let img = Texture::load(rl, path).unwrap().map(|mut i| { i.set_texture_filter(TextureFilter::Bilinear); i });
+                            let img = Texture::load(rl, path).unwrap_or_else(|e| {
+                                eprintln!("failed to open icon: {e}");
+                                None
+                            });
+                            let img = img.map(|mut i| { i.set_texture_filter(TextureFilter::Bilinear); i });
                             self.rendered_icons.insert(icon_path.clone(), img);
                         }
                     };
@@ -393,30 +401,28 @@ impl<'a> Keal<'a> {
                 modified = true;
             }
 
-            while let Some(key) = rl.get_key_pressed() {
-                match key {
-                    KeyboardKey::Left if *cursor_index > 0 => {
-                        *cursor_index -= 1;
-                        while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
-                            *cursor_index -= 1;
-                        }
-                    }
-                    KeyboardKey::Right if *cursor_index < self.input.len() => {
-                        *cursor_index += 1;
-                        while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
-                            *cursor_index += 1;
-                        }
-                    }
-                    KeyboardKey::Backspace if *cursor_index > 0 => {
-                        *cursor_index -= 1;
-                        while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
-                            *cursor_index -= 1;
-                        }
-                        self.input.remove(*cursor_index);
-                        modified = true;
-                    }
-                    _ => ()
+            if is_key_pressed_repeated(rl, KeyboardKey::Left) && *cursor_index > 0 {
+                *cursor_index -= 1;
+                while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
+                    *cursor_index -= 1;
                 }
+            }
+            if is_key_pressed_repeated(rl, KeyboardKey::Right) && *cursor_index < self.input.len() {
+                *cursor_index += 1;
+                while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
+                    *cursor_index += 1;
+                }
+            }
+            if is_key_pressed_repeated(rl, KeyboardKey::Backspace) && *cursor_index > 0 {
+                *cursor_index -= 1;
+                while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
+                    *cursor_index -= 1;
+                }
+                self.input.remove(*cursor_index);
+                modified = true;
+            }
+
+            if rl.get_key_pressed().is_some() {
                 self.cursor_tick = 0;
             }
 
@@ -430,12 +436,12 @@ impl<'a> Keal<'a> {
 
         // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
         let ctrl = rl.is_key_down(KeyboardKey::LeftControl);
-        if rl.is_key_pressed(KeyboardKey::Down) || (ctrl && rl.is_key_pressed(KeyboardKey::J)) || (ctrl && rl.is_key_pressed(KeyboardKey::N)) {
+        if is_key_pressed_repeated(rl, KeyboardKey::Down) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::J)) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::N)) {
             // TODO: gently scroll window to selected choice
             self.selected += 1;
             self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
         }
-        if rl.is_key_pressed(KeyboardKey::Up) || (ctrl && rl.is_key_pressed(KeyboardKey::K)) || (ctrl && rl.is_key_pressed(KeyboardKey::P)) {
+        if is_key_pressed_repeated(rl, KeyboardKey::Up) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::K)) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::P)) {
             self.selected = self.selected.saturating_sub(1);
         }
 
