@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    config::Config::init();
+    let config = config::Config::init();
 
     log_time("read config");
 
@@ -52,7 +52,7 @@ fn main() -> anyhow::Result<()> {
 
     while !rl.window_should_close() {
         rl.begin_drawing(|rl| {
-            rl.clear_background(Color::BLANK);
+            rl.clear_background(config.theme.background);
 
             keal.render(rl);
         });

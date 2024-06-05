@@ -241,11 +241,11 @@ impl<'a> Keal<'a> {
         let search_bar_height = (config.font_size*3.25).ceil();
         let mouse = rl.get_mouse_pos();
 
-        self.scroll += rl.get_mouse_wheel_move()*20.0;
-        // self.scroll = self.scroll.clamp(rl.get_render_height()-self.entries.total_height - search_bar_height, 0.0);
+        self.scroll -= rl.get_mouse_wheel_move()*20.0;
+        self.scroll = self.scroll.clamp(0.0, (self.entries.total_height - rl.get_render_height() + search_bar_height).max(0.0));
         self.hovered_choice = None;
 
-        let mut offset_y = search_bar_height + self.scroll;
+        let mut offset_y = search_bar_height - self.scroll;
 
         for (index, (entry, wrap_info)) in entries.list.iter().zip(entries.wrap_info.iter()).enumerate() {
             let max_height = wrap_info.0.height.max(wrap_info.1.as_ref().map(|x| x.height).unwrap_or(0.0));
@@ -278,7 +278,7 @@ impl<'a> Keal<'a> {
                 } else if let Some(icon) = self.icons.get(icon_path) {
                     match icon {
                         Icon::Svg(path) | Icon::Other(path) => {
-                            let img = Texture::load(rl, path).unwrap().map(|mut i| { i.set_texture_filter(TextureFilter::Trilinear); i });
+                            let img = Texture::load(rl, path).unwrap().map(|mut i| { i.set_texture_filter(TextureFilter::Bilinear); i });
                             self.rendered_icons.insert(icon_path.clone(), img);
                         }
                     };
