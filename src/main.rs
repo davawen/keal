@@ -25,30 +25,6 @@ fn log_time(s: impl ToString) {
     eprintln!("[{}.{:03}]: {}", duration.as_secs(), duration.subsec_millis(), s.to_string());
 }
 
-fn draw_rectangle_rounded(draw: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, radius: f32, color: Color) {
-    let left = x + radius;
-    let top = y + radius;
-
-    let right = x + w - radius;
-    let bot = y + h - radius;
-
-    let width = w - radius*2.0;
-    let height = h - radius*2.0;
-
-    draw.rectangle(left, top, width, height, color);
-
-    draw.rectangle(left, y, width, radius, color);
-    draw.rectangle(left, bot, width, radius, color);
-
-    draw.rectangle(x, top, radius, height, color);
-    draw.rectangle(right, top, radius, height, color);
-
-    draw.circle(left, top, radius, color);
-    draw.circle(right, top, radius, color);
-    draw.circle(left, bot, radius, color);
-    draw.circle(right, bot, radius, color);
-}
-
 fn main() -> anyhow::Result<()> {
     START.get_or_init(std::time::Instant::now);
     match Arguments::init() {
@@ -59,12 +35,12 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let config = config::Config::init();
+    config::Config::init();
 
     log_time("read config");
 
     let mut rl = Raylib::init_window(1920/3, 1080/2, "Keal", 60);
-    rl.set_window_state(ConfigFlags::FLAG_WINDOW_UNDECORATED | ConfigFlags::FLAG_WINDOW_RESIZABLE);
+    rl.set_window_state(ConfigFlags::FLAG_WINDOW_UNDECORATED | ConfigFlags::FLAG_WINDOW_TRANSPARENT | ConfigFlags::FLAG_WINDOW_RESIZABLE);
 
     let iosevka = include_bytes!("../public/iosevka-regular.ttf");
     let iosevka = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
@@ -75,13 +51,12 @@ fn main() -> anyhow::Result<()> {
     keal.update_input(true);
 
     while !rl.window_should_close() {
-        rl.begin_drawing(|rl, draw| {
-            draw.clear_background(config.theme.background);
-            // draw_rectangle_rounded(draw, 0.0, 0.0, rl.get_render_width(), rl.get_render_height(), 10.0, config.theme.background);
+        rl.begin_drawing(|rl| {
+            rl.clear_background(Color::BLANK);
 
-            keal.update(rl, draw);
-            keal.render(rl, draw);
+            keal.render(rl);
         });
+        keal.update(&mut rl);
 
         if keal.quit { break }
     }

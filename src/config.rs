@@ -1,34 +1,9 @@
 use std::{collections::HashMap, sync::OnceLock};
 use raylib::math::color::Color;
 
-// use iced::{font, widget::text};
 use indexmap::IndexMap;
 
-use crate::{xdg_utils::config_dir, ini_parser::Ini};
-
-#[derive(Debug, Default, Clone)]
-pub struct Theme {
-    pub background: Color,
-
-    pub input_placeholder: Color,
-    pub input_selection: Color,
-    pub input_background: Color,
-
-    pub text: Color,
-    pub matched_text: Color,
-    pub selected_matched_text: Color,
-    pub comment: Color,
-
-    pub choice_background: Color,
-    pub selected_choice_background: Color,
-    pub hovered_choice_background: Color,
-    pub pressed_choice_background: Color,
-
-    pub scrollbar_enabled: bool,
-    pub scrollbar: Color,
-    pub hovered_scrollbar: Color,
-    pub scrollbar_border_radius: f32
-}
+use crate::{xdg_utils::config_dir, ini_parser::Ini, ui::Theme};
 
 // WARN: When adding fields to the config, remember to set them in `add_from_string`!
 

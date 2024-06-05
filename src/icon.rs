@@ -5,7 +5,7 @@ use walkdir::WalkDir;
 use crate::{xdg_utils::xdg_directories, log_time};
 
 /// Distinguishes between a direct path to an icon, and an icon identifier that needs to be searched in IconCache.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum IconPath {
     Name(String),
     Path(Icon)
@@ -15,7 +15,7 @@ pub enum IconPath {
 #[derive(Debug, Default, Clone)]
 pub struct IconCache(HashMap<String, Icon>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Icon {
     Svg(PathBuf),
     Other(PathBuf)
