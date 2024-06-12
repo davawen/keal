@@ -152,6 +152,8 @@ pub struct Keal<'a> {
     /// byte index of the cursor in the text input, None if the input is not selected
     cursor_index: Option<usize>,
     cursor_tick: usize,
+    /// byte indices of the start and end ranges of the selection
+    select_range: Option<(usize, usize)>,
     scroll: f32,
 
     selected: usize,
@@ -214,6 +216,7 @@ impl<'a> Keal<'a> {
             input: String::new(),
             cursor_index: Some(0),
             cursor_tick: 0,
+            select_range: None,
             scroll: 0.0,
             selected: 0,
             hovered_choice: None,
@@ -349,10 +352,12 @@ impl<'a> Keal<'a> {
             draw_rectangle_rounded(rl, 0.0, 0.0, rl.get_render_width(), search_bar_height, [5.0, 5.0, 0.0, 0.0], config.theme.input_background);
             rl.text(font, &text, vec2(left_padding, baseline), size, config.theme.text);
 
-            if let Some(cursor_index) = self.cursor_index {
-                let cursor_position = if self.input.is_empty() {
-                    0.0
-                } else { rl.measure_text(font, &text[0..cursor_index], size).x };
+            if let Some((start, end)) = self.select_range {
+                let start_pos = if self.input.is_empty() { 0.0 } else { rl.measure_text(font, &text[0..start], size).x };
+                let end_pos = if self.input.is_empty() { 0.0 } else { rl.measure_text(font, &text[0..end], size).x };
+                rl.rectangle(left_padding + start_pos - 1.0, baseline, end_pos - start_pos + 2.0, size + 5.0, config.theme.input_selection);
+            } else if let Some(cursor_index) = self.cursor_index {
+                let cursor_position = if self.input.is_empty() { 0.0 } else { rl.measure_text(font, &text[0..cursor_index], size).x };
 
                 if self.cursor_tick % 60 < 30 {
                     rl.rectangle(left_padding + cursor_position - 1.0, baseline, 1.0, size + 5.0, Color::WHITE);
@@ -401,10 +406,23 @@ impl<'a> Keal<'a> {
                 modified = true;
             }
 
+            let shift = rl.is_key_down(KeyboardKey::LeftShift) || rl.is_key_down(KeyboardKey::RightShift);
             if is_key_pressed_repeated(rl, KeyboardKey::Left) && *cursor_index > 0 {
+                let old_index = *cursor_index;
+                
                 *cursor_index -= 1;
                 while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
                     *cursor_index -= 1;
+                }
+
+                if shift {
+                    if let Some((start, _)) = &mut self.select_range {
+                        *start = *cursor_index;
+                    } else {
+                        self.select_range = Some((*cursor_index, old_index));
+                    }
+                } else {
+                    self.select_range = None;
                 }
             }
             if is_key_pressed_repeated(rl, KeyboardKey::Right) && *cursor_index < self.input.len() {
