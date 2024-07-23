@@ -35,30 +35,37 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    log_time("reading config");
+
     let config = config::Config::init();
 
-    log_time("read config");
+    log_time("initilizing window");
 
-    let mut rl = Raylib::init_window(1920/3, 1080/2, "Keal", 60);
-    rl.set_window_state(ConfigFlags::FLAG_WINDOW_UNDECORATED | ConfigFlags::FLAG_WINDOW_TRANSPARENT | ConfigFlags::FLAG_WINDOW_RESIZABLE);
+    set_trace_log_level(TraceLogLevel::Fatal);
+    set_config_flags(ConfigFlags::TRANSPARENT);
+    let mut rl = &mut init_window(1920/3, 1080/2, "Keal", 60);
+    set_window_state(rl, WindowFlags::UNDECORATED | WindowFlags::RESIZABLE);
+
+    log_time("initilizing font");
 
     let iosevka = include_bytes!("../public/iosevka-regular.ttf");
     let iosevka = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
+
+    log_time("initializing keal");
+
     let mut keal = Keal::new(&mut rl, &iosevka);
 
     log_time("entering drawing loop");
 
     keal.update_input(true);
 
-    while !rl.window_should_close() {
-        rl.begin_drawing(|rl| {
-            rl.clear_background(config.theme.background);
+    while !window_should_close(rl) {
+        begin_drawing(rl, |rl| {
+            clear_background(rl, config.theme.background);
 
             keal.render(rl);
         });
         keal.update(&mut rl);
-
-        if keal.quit { break }
     }
 
     Ok(())

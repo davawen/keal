@@ -35,23 +35,23 @@ fn draw_rectangle_rounded(rl: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, m
     let pad_left = borders[0].max(borders[2]);
     let pad_right = borders[1].max(borders[3]);
 
-    rl.rectangle(x + pad_left, y + pad_top, w - pad_left - pad_right, h - pad_top - pad_bot, color);
+    draw_rectangle(rl, x + pad_left, y + pad_top, w - pad_left - pad_right, h - pad_top - pad_bot, color);
 
-    rl.rectangle(x + borders[0], y, top_width, pad_top, color);
-    rl.rectangle(x + borders[2], y + h - pad_bot, bot_width, pad_bot, color);
+    draw_rectangle(rl, x + borders[0], y, top_width, pad_top, color);
+    draw_rectangle(rl, x + borders[2], y + h - pad_bot, bot_width, pad_bot, color);
 
-    rl.rectangle(x, y + borders[0], pad_left, left_height, color);
-    rl.rectangle(x + w - pad_right, y + borders[1], pad_right, right_height, color);
+    draw_rectangle(rl, x, y + borders[0], pad_left, left_height, color);
+    draw_rectangle(rl, x + w - pad_right, y + borders[1], pad_right, right_height, color);
 
-    rl.circle(x + borders[0], y + borders[0], borders[0], color);
-    rl.circle(x + w - borders[1], y + borders[1], borders[1], color);
-    rl.circle(x + borders[2], y + h - borders[2], borders[2], color);
-    rl.circle(x + w - borders[3], y + h - borders[3], borders[3], color);
+    draw_circle(rl, x + borders[0], y + borders[0], borders[0], color);
+    draw_circle(rl, x + w - borders[1], y + borders[1], borders[1], color);
+    draw_circle(rl, x + borders[2], y + h - borders[2], borders[2], color);
+    draw_circle(rl, x + w - borders[3], y + h - borders[3], borders[3], color);
 }
 
 
 /// Returns a vector of indices (byte offsets) at which the text should wrap, as well as the total height of the text
-fn measure_text_wrap(rl: &mut Raylib, text: &str, max_width: f32, atlas: &mut TTFAtlas, font_size: f32, line_height: f32) -> WrapInfo {
+fn measure_text_wrap(text: &str, max_width: f32, atlas: &mut TTFAtlas, font_size: f32, line_height: f32) -> WrapInfo {
     let max_width = max_width.max(font_size*2.0);
 
     let mut splits = SmallVec::new();
@@ -64,7 +64,7 @@ fn measure_text_wrap(rl: &mut Raylib, text: &str, max_width: f32, atlas: &mut TT
     let mut iter = text.char_indices();
     iter.next();
     for (index, c) in iter {
-        let dims = rl.measure_text(atlas, &text[last..index], font_size);
+        let dims = measure_text(atlas, &text[last..index], font_size);
 
         if c == '\n' || running_width + dims.x >= max_width {
             line_start = index;
@@ -79,7 +79,7 @@ fn measure_text_wrap(rl: &mut Raylib, text: &str, max_width: f32, atlas: &mut TT
     }
 
     if line_start < text.len() {
-        let dims = rl.measure_text(atlas, &text[last..], font_size);
+        let dims = measure_text(atlas, &text[last..], font_size);
         running_width += dims.x;
 
         splits.push(text.len());
@@ -125,12 +125,12 @@ impl Entries {
         self.wrap_info.extend(self.list.iter().map(|entry| {
             let icon_width = entry.icon.as_ref().map(|_| config.font_size + 4.0).unwrap_or_default();
 
-            let name = measure_text_wrap(rl, &entry.name, rl.get_render_width()/2.0 - icon_width, font, config.font_size, 5.0);
+            let name = measure_text_wrap(&entry.name, get_screen_width(rl)/2.0 - icon_width, font, config.font_size, 5.0);
             let mut max_height = name.height;
 
-            let comment_width = rl.get_render_width() - name.width - icon_width - 10.0 - 20.0 - 10.0; // this removes: name left padding, name-comment inner padding, comment right padding
+            let comment_width = get_screen_width(rl) - name.width - icon_width - 10.0 - 20.0 - 10.0; // this removes: name left padding, name-comment inner padding, comment right padding
             let comment = entry.comment.as_ref()
-                .map(|comment| measure_text_wrap(rl, comment, comment_width, font, config.font_size, 5.0))
+                .map(|comment| measure_text_wrap(comment, comment_width, font, config.font_size, 5.0))
                 .inspect(|comment| max_height = max_height.max(comment.height));
 
             self.total_height += max_height + 20.0;
@@ -141,8 +141,6 @@ impl Entries {
 }
 
 pub struct Keal<'a> {
-    pub quit: bool,
-
     // UI state
     input: String,
     /// byte index of the cursor in the text input, None if the input is not selected
@@ -206,7 +204,6 @@ impl<'a> Keal<'a> {
         log_time("finished initializing");
 
         Keal {
-            quit: false,
             input: String::new(),
             cursor_index: Some(0),
             cursor_tick: 0,
@@ -239,10 +236,10 @@ impl<'a> Keal<'a> {
         // TODO: scrollbar
 
         let search_bar_height = (config.font_size*3.25).ceil();
-        let mouse = rl.get_mouse_pos();
+        let mouse = get_mouse_pos(rl);
 
-        self.scroll -= rl.get_mouse_wheel_move()*20.0;
-        self.scroll = self.scroll.clamp(0.0, (self.entries.total_height - rl.get_render_height() + search_bar_height).max(0.0));
+        self.scroll -= get_mouse_wheel_move(rl)*20.0;
+        self.scroll = self.scroll.clamp(0.0, (self.entries.total_height - get_screen_height(rl) + search_bar_height).max(0.0));
         self.hovered_choice = None;
 
         let mut offset_y = search_bar_height - self.scroll;
@@ -254,7 +251,7 @@ impl<'a> Keal<'a> {
                 offset_y = next_offset_y;
                 continue
             }
-            if offset_y > rl.get_render_height() { break }
+            if offset_y > get_screen_height(rl) { break }
 
             let selected = self.selected == index;
 
@@ -265,14 +262,14 @@ impl<'a> Keal<'a> {
             }
             if selected { rectangle_color = config.theme.selected_choice_background; } 
 
-            rl.rectangle(0.0, offset_y, rl.get_render_width(), next_offset_y-offset_y, rectangle_color);
+            draw_rectangle(rl, 0.0, offset_y, get_screen_width(rl), next_offset_y-offset_y, rectangle_color);
 
             let mut icon_offset = 10.0;
 
             if let Some(icon_path) = &entry.icon {
                 if let Some(rendered) = self.rendered_icons.get(icon_path) {
                     if let Some(rendered) = rendered {
-                        rl.texture_ex(rendered, vec2(icon_offset, offset_y + 10.0), 0.0, config.font_size / rendered.width() as f32, Color::WHITE);
+                        draw_texture_ex(rl, rendered, vec2(icon_offset, offset_y + 10.0), 0.0, config.font_size / rendered.width() as f32, Color::WHITE);
                         icon_offset += config.font_size + 4.0;
                     }
                 } else if let Some(icon) = self.icons.get(icon_path) {
@@ -301,7 +298,7 @@ impl<'a> Keal<'a> {
                         }
                     };
 
-                    let new_pos = rl.text(font, span, vec2(offset, name_offset_y.ceil()), font_size, color);
+                    let new_pos = draw_text(rl, font, span, vec2(offset, name_offset_y.ceil()), font_size, color);
                     offset = new_pos.x;
                 }
 
@@ -319,7 +316,7 @@ impl<'a> Keal<'a> {
                 for &line_end in &wrap_info.splits {
                     let text = &comment[line_start..line_end];
 
-                    rl.text(font, text, vec2(rl.get_render_width() - wrap_info.width - 10.0, comment_offset_y), font_size, config.theme.comment);
+                    draw_text(rl, font, text, vec2(get_screen_width(rl) - wrap_info.width - 10.0, comment_offset_y), font_size, config.theme.comment);
                     comment_offset_y += config.font_size + 5.0;
                     line_start = line_end;
                 }
@@ -338,16 +335,16 @@ impl<'a> Keal<'a> {
             let left_padding = config.font_size;
             let baseline = (search_bar_height/2.0 - size/2.0).ceil();
 
-            draw_rectangle_rounded(rl, 0.0, 0.0, rl.get_render_width(), search_bar_height, [5.0, 5.0, 0.0, 0.0], config.theme.input_background);
-            rl.text(font, &text, vec2(left_padding, baseline), size, config.theme.text);
+            draw_rectangle_rounded(rl, 0.0, 0.0, get_screen_width(rl), search_bar_height, [5.0, 5.0, 0.0, 0.0], config.theme.input_background);
+            draw_text(rl, font, &text, vec2(left_padding, baseline), size, config.theme.text);
 
             if let Some(cursor_index) = self.cursor_index {
                 let cursor_position = if self.input.is_empty() {
                     0.0
-                } else { rl.measure_text(font, &text[0..cursor_index], size).x };
+                } else { measure_text(font, &text[0..cursor_index], size).x };
 
                 if self.cursor_tick % 60 < 30 {
-                    rl.rectangle(left_padding + cursor_position - 1.0, baseline, 1.0, size + 5.0, Color::WHITE);
+                    draw_rectangle(rl, left_padding + cursor_position - 1.0, baseline, 1.0, size + 5.0, Color::WHITE);
                 }
             }
 
@@ -356,28 +353,28 @@ impl<'a> Keal<'a> {
     }
 
     pub fn update(&mut self, rl: &mut Raylib) {
-        if self.old_screen_width != rl.get_render_width() {
+        if self.old_screen_width != get_screen_width(rl) {
             self.entries.recalculate(rl, &mut self.atlas);
-            self.old_screen_width = rl.get_render_width();
+            self.old_screen_width = get_screen_width(rl);
         }
 
         if let Some(hovered_choice) = self.hovered_choice {
-            rl.set_mouse_cursor(MouseCursor::PointingHand);
+            set_mouse_cursor(rl, MouseCursor::PointingHand);
 
-            if rl.is_mouse_button_pressed(MouseButton::Left) {
+            if is_mouse_button_pressed(rl, MouseButton::Left) {
                 self.message_sender.send(Message::Launch(Some(self.entries.list[hovered_choice].label))).expect("message reciever destroyed");
             }
         } else if self.input_hovered {
-            rl.set_mouse_cursor(MouseCursor::Ibeam);
+            set_mouse_cursor(rl, MouseCursor::Ibeam);
 
-            if rl.is_mouse_button_pressed(MouseButton::Left) {
+            if is_mouse_button_pressed(rl, MouseButton::Left) {
                 self.cursor_index = Some(0);
             }
         } else {
-            rl.set_mouse_cursor(MouseCursor::Default);
+            set_mouse_cursor(rl, MouseCursor::Default);
         }
 
-        if rl.is_key_pressed(KeyboardKey::Enter) {
+        if is_key_pressed(rl, KeyboardKey::Enter) {
             let _ = self.message_sender.send(Message::Launch(Some(self.entries.list[self.selected].label)));
         }
 
@@ -385,7 +382,7 @@ impl<'a> Keal<'a> {
             self.cursor_tick += 1;
 
             let mut modified = false;
-            while let Some(ch) = rl.get_char_pressed() {
+            while let Some(ch) = get_char_pressed(rl) {
                 self.input.insert(*cursor_index, ch);
                 *cursor_index += ch.len_utf8();
 
@@ -393,7 +390,7 @@ impl<'a> Keal<'a> {
                 modified = true;
             }
 
-            while let Some(key) = rl.get_key_pressed() {
+            while let Some(key) = get_key_pressed(rl) {
                 match key {
                     KeyboardKey::Left if *cursor_index > 0 => {
                         *cursor_index -= 1;
@@ -429,13 +426,13 @@ impl<'a> Keal<'a> {
         }
 
         // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
-        let ctrl = rl.is_key_down(KeyboardKey::LeftControl);
-        if rl.is_key_pressed(KeyboardKey::Down) || (ctrl && rl.is_key_pressed(KeyboardKey::J)) || (ctrl && rl.is_key_pressed(KeyboardKey::N)) {
+        let ctrl = is_key_down(rl, KeyboardKey::LeftControl);
+        if is_key_pressed(rl, KeyboardKey::Down) || (ctrl && is_key_pressed(rl, KeyboardKey::J)) || (ctrl && is_key_pressed(rl, KeyboardKey::N)) {
             // TODO: gently scroll window to selected choice
             self.selected += 1;
             self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
         }
-        if rl.is_key_pressed(KeyboardKey::Up) || (ctrl && rl.is_key_pressed(KeyboardKey::K)) || (ctrl && rl.is_key_pressed(KeyboardKey::P)) {
+        if is_key_pressed(rl, KeyboardKey::Up) || (ctrl && is_key_pressed(rl, KeyboardKey::K)) || (ctrl && is_key_pressed(rl, KeyboardKey::P)) {
             self.selected = self.selected.saturating_sub(1);
         }
 
@@ -452,7 +449,7 @@ impl<'a> Keal<'a> {
                 }
                 Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
                 Message::Entries(entries) => self.entries = Entries::new(entries, rl, &mut self.atlas),
-                Message::Action(action) => return self.handle_action(action),
+                Message::Action(action) => return self.handle_action(rl, action),
             };
         }
     }
@@ -463,7 +460,7 @@ impl Keal<'_> {
         self.manager.send(async_manager::Event::UpdateInput(self.input.clone(), from_user));
     }
 
-    fn handle_action(&mut self, action: Action) /* -> Command<Message> */ {
+    fn handle_action(&mut self, rl: &mut Raylib, action: Action) /* -> Command<Message> */ {
         match action {
             Action::None => (),
             Action::ChangeInput(new) => {
@@ -483,19 +480,19 @@ impl Keal<'_> {
             }
             Action::Exec(mut command) => {
                 let _ = command.0.exec();
-                self.quit = true;
+                quit(rl);
             }
             Action::PrintAndClose(message) => {
                 println!("{message}");
-                self.quit = true;
+                quit(rl);
             }
             Action::Fork => match fork().expect("failed to fork") {
-                Fork::Parent(_) => self.quit = true,
+                Fork::Parent(_) => quit(rl),
                 Fork::Child => ()
             }
             Action::WaitAndClose => {
                 self.manager.with_manager(|m| m.wait());
-                self.quit = true;
+                quit(rl);
             }
         }
     }
