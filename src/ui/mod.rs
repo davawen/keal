@@ -18,6 +18,10 @@ mod async_manager;
 
 type TTFAtlas<'a> = TrueTypeFontAtlas<'a>;
 
+fn is_key_pressed_repeated(rl: &mut Raylib, key: KeyboardKey) -> bool {
+    is_key_pressed(rl, key) || is_key_pressed_again(rl, key)
+}
+
 /// order of border radius is: `[top-left, top-right, bot-left, bot-right]`
 fn draw_rectangle_rounded(rl: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, mut borders: [f32; 4], color: Color) {
     for radius in &mut borders {
@@ -146,6 +150,8 @@ pub struct Keal<'a> {
     /// byte index of the cursor in the text input, None if the input is not selected
     cursor_index: Option<usize>,
     cursor_tick: usize,
+    /// byte indices of the start and end ranges of the selection
+    select_range: Option<(usize, usize)>,
     scroll: f32,
 
     selected: usize,
@@ -207,6 +213,7 @@ impl<'a> Keal<'a> {
             input: String::new(),
             cursor_index: Some(0),
             cursor_tick: 0,
+            select_range: None,
             scroll: 0.0,
             selected: 0,
             hovered_choice: None,
@@ -275,7 +282,11 @@ impl<'a> Keal<'a> {
                 } else if let Some(icon) = self.icons.get(icon_path) {
                     match icon {
                         Icon::Svg(path) | Icon::Other(path) => {
-                            let img = Texture::load(rl, path).unwrap().map(|mut i| { i.set_texture_filter(TextureFilter::Bilinear); i });
+                            let img = Texture::load(rl, path).unwrap_or_else(|e| {
+                                eprintln!("failed to open icon: {e}");
+                                None
+                            });
+                            let img = img.map(|mut i| { i.set_texture_filter(TextureFilter::Bilinear); i });
                             self.rendered_icons.insert(icon_path.clone(), img);
                         }
                     };
@@ -338,10 +349,12 @@ impl<'a> Keal<'a> {
             draw_rectangle_rounded(rl, 0.0, 0.0, get_screen_width(rl), search_bar_height, [5.0, 5.0, 0.0, 0.0], config.theme.input_background);
             draw_text(rl, font, &text, vec2(left_padding, baseline), size, config.theme.text);
 
-            if let Some(cursor_index) = self.cursor_index {
-                let cursor_position = if self.input.is_empty() {
-                    0.0
-                } else { measure_text(font, &text[0..cursor_index], size).x };
+            if let Some((start, end)) = self.select_range {
+                let start_pos = if self.input.is_empty() { 0.0 } else { measure_text(font, &text[0..start], size).x };
+                let end_pos = if self.input.is_empty() { 0.0 } else { measure_text(font, &text[0..end], size).x };
+                draw_rectangle(rl, left_padding + start_pos - 1.0, baseline, end_pos - start_pos + 2.0, size + 5.0, config.theme.input_selection);
+            } else if let Some(cursor_index) = self.cursor_index {
+                let cursor_position = if self.input.is_empty() { 0.0 } else { measure_text(font, &text[0..cursor_index], size).x };
 
                 if self.cursor_tick % 60 < 30 {
                     draw_rectangle(rl, left_padding + cursor_position - 1.0, baseline, 1.0, size + 5.0, Color::WHITE);
@@ -390,30 +403,41 @@ impl<'a> Keal<'a> {
                 modified = true;
             }
 
-            while let Some(key) = get_key_pressed(rl) {
-                match key {
-                    KeyboardKey::Left if *cursor_index > 0 => {
-                        *cursor_index -= 1;
-                        while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
-                            *cursor_index -= 1;
-                        }
-                    }
-                    KeyboardKey::Right if *cursor_index < self.input.len() => {
-                        *cursor_index += 1;
-                        while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
-                            *cursor_index += 1;
-                        }
-                    }
-                    KeyboardKey::Backspace if *cursor_index > 0 => {
-                        *cursor_index -= 1;
-                        while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
-                            *cursor_index -= 1;
-                        }
-                        self.input.remove(*cursor_index);
-                        modified = true;
-                    }
-                    _ => ()
+            let shift = is_key_down(rl, KeyboardKey::LeftShift) || is_key_down(rl, KeyboardKey::RightShift);
+            if is_key_pressed_repeated(rl, KeyboardKey::Left) && *cursor_index > 0 {
+                let old_index = *cursor_index;
+                
+                *cursor_index -= 1;
+                while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
+                    *cursor_index -= 1;
                 }
+
+                if shift {
+                    if let Some((start, _)) = &mut self.select_range {
+                        *start = *cursor_index;
+                    } else {
+                        self.select_range = Some((*cursor_index, old_index));
+                    }
+                } else {
+                    self.select_range = None;
+                }
+            }
+            if is_key_pressed_repeated(rl, KeyboardKey::Right) && *cursor_index < self.input.len() {
+                *cursor_index += 1;
+                while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
+                    *cursor_index += 1;
+                }
+            }
+            if is_key_pressed_repeated(rl, KeyboardKey::Backspace) && *cursor_index > 0 {
+                *cursor_index -= 1;
+                while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
+                    *cursor_index -= 1;
+                }
+                self.input.remove(*cursor_index);
+                modified = true;
+            }
+
+            if get_key_pressed(rl).is_some() {
                 self.cursor_tick = 0;
             }
 
@@ -427,12 +451,12 @@ impl<'a> Keal<'a> {
 
         // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
         let ctrl = is_key_down(rl, KeyboardKey::LeftControl);
-        if is_key_pressed(rl, KeyboardKey::Down) || (ctrl && is_key_pressed(rl, KeyboardKey::J)) || (ctrl && is_key_pressed(rl, KeyboardKey::N)) {
+        if is_key_pressed_repeated(rl, KeyboardKey::Down) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::J)) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::N)) {
             // TODO: gently scroll window to selected choice
             self.selected += 1;
             self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
         }
-        if is_key_pressed(rl, KeyboardKey::Up) || (ctrl && is_key_pressed(rl, KeyboardKey::K)) || (ctrl && is_key_pressed(rl, KeyboardKey::P)) {
+        if is_key_pressed_repeated(rl, KeyboardKey::Up) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::K)) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::P)) {
             self.selected = self.selected.saturating_sub(1);
         }
 
