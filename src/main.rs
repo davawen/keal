@@ -49,11 +49,11 @@ fn main() -> anyhow::Result<()> {
     log_time("initilizing font");
 
     let iosevka = include_bytes!("../public/iosevka-regular.ttf");
-    let iosevka = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
+    let iosevka = load_font_bytes(rl, &iosevka[..]);
 
     log_time("initializing keal");
 
-    let mut keal = Keal::new(&mut rl, &iosevka);
+    let mut keal = Keal::new(iosevka);
 
     log_time("entering drawing loop");
 

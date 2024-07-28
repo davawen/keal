@@ -16,9 +16,9 @@ mod styled;
 mod match_span;
 mod async_manager;
 
-type TTFAtlas<'a> = TrueTypeFontAtlas<'a>;
+pub type TTFCache = TrueTypeFontCache;
 
-fn is_key_pressed_repeated(rl: &mut Raylib, key: KeyboardKey) -> bool {
+fn is_key_pressed_repeated(rl: &mut Raylib, key: Key) -> bool {
     is_key_pressed(rl, key) || is_key_pressed_again(rl, key)
 }
 
@@ -55,7 +55,7 @@ fn draw_rectangle_rounded(rl: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, m
 
 
 /// Returns a vector of indices (byte offsets) at which the text should wrap, as well as the total height of the text
-fn measure_text_wrap(text: &str, max_width: f32, atlas: &mut TTFAtlas, font_size: f32, line_height: f32) -> WrapInfo {
+fn measure_text_wrap(text: &str, max_width: f32, atlas: &TTFCache, font_size: f32, line_height: f32) -> WrapInfo {
     let max_width = max_width.max(font_size*2.0);
 
     let mut splits = SmallVec::new();
@@ -109,7 +109,7 @@ struct Entries {
 }
 
 impl Entries {
-    fn new(list: Vec<OwnedEntry>, rl: &mut Raylib, atlas: &mut TTFAtlas) -> Self {
+    fn new(list: Vec<OwnedEntry>, rl: &mut Raylib, atlas: &TTFCache) -> Self {
         let mut this = Self {
             list,
             wrap_info: Vec::new(),
@@ -121,7 +121,7 @@ impl Entries {
     }
 
     /// call this when the screen width changes
-    fn recalculate(&mut self, rl: &mut Raylib, font: &mut TTFAtlas) {
+    fn recalculate(&mut self, rl: &mut Raylib, font: &TTFCache) {
         let config = config();
 
         self.total_height = 0.0;
@@ -144,7 +144,7 @@ impl Entries {
     }
 }
 
-pub struct Keal<'a> {
+pub struct Keal {
     // UI state
     input: String,
     /// byte index of the cursor in the text input, None if the input is not selected
@@ -164,8 +164,7 @@ pub struct Keal<'a> {
 
     // data state
     icons: IconCache,
-    atlas: TTFAtlas<'a>,
-    atlas_big: TTFAtlas<'a>,
+    font: TrueTypeFontCache,
 
     entries: Entries,
     manager: AsyncManager,
@@ -185,17 +184,13 @@ pub enum Message {
     Action(Action)
 }
 
-impl<'a> Keal<'a> {
-    pub fn new(rl: &mut Raylib, font: &'a TrueTypeFont) -> Self {
+impl Keal {
+    pub fn new(font: TrueTypeFontCache) -> Self {
         log_time("initializing app");
 
         let config = config();
 
         let (message_sender, message_rec) = channel();
-
-        let atlas = font.atlas(rl, config.font_size);
-        let atlas_big = font.atlas(rl, config.font_size * 1.25);
-        log_time("finished loading font");
 
         {
             let message_sender = message_sender.clone();
@@ -221,8 +216,7 @@ impl<'a> Keal<'a> {
             old_screen_width: 0.0,
             rendered_icons: Default::default(),
             icons: Default::default(),
-            atlas,
-            atlas_big,
+            font,
             entries: Default::default(),
             manager,
             message_sender,
@@ -234,7 +228,7 @@ impl<'a> Keal<'a> {
         let entries = &self.entries;
         let config = config();
 
-        let font = &mut self.atlas;
+        let font = &self.font;
         let font_size = config.font_size;
 
         let data = &mut *self.manager.get_data();
@@ -338,7 +332,6 @@ impl<'a> Keal<'a> {
 
         // input
         {
-            let font = &mut self.atlas_big;
             let text = if self.input.is_empty() && self.cursor_index.is_none() { &config.placeholder_text } else { &self.input };
 
             let size = config.font_size*1.25;
@@ -367,7 +360,7 @@ impl<'a> Keal<'a> {
 
     pub fn update(&mut self, rl: &mut Raylib) {
         if self.old_screen_width != get_screen_width(rl) {
-            self.entries.recalculate(rl, &mut self.atlas);
+            self.entries.recalculate(rl, &self.font);
             self.old_screen_width = get_screen_width(rl);
         }
 
@@ -387,7 +380,7 @@ impl<'a> Keal<'a> {
             set_mouse_cursor(rl, MouseCursor::Default);
         }
 
-        if is_key_pressed(rl, KeyboardKey::Enter) {
+        if is_key_pressed(rl, Key::Enter) {
             let _ = self.message_sender.send(Message::Launch(Some(self.entries.list[self.selected].label)));
         }
 
@@ -403,8 +396,8 @@ impl<'a> Keal<'a> {
                 modified = true;
             }
 
-            let shift = is_key_down(rl, KeyboardKey::LeftShift) || is_key_down(rl, KeyboardKey::RightShift);
-            if is_key_pressed_repeated(rl, KeyboardKey::Left) && *cursor_index > 0 {
+            let shift = is_key_down(rl, Key::LeftShift) || is_key_down(rl, Key::RightShift);
+            if is_key_pressed_repeated(rl, Key::Left) && *cursor_index > 0 {
                 let old_index = *cursor_index;
                 
                 *cursor_index -= 1;
@@ -422,13 +415,13 @@ impl<'a> Keal<'a> {
                     self.select_range = None;
                 }
             }
-            if is_key_pressed_repeated(rl, KeyboardKey::Right) && *cursor_index < self.input.len() {
+            if is_key_pressed_repeated(rl, Key::Right) && *cursor_index < self.input.len() {
                 *cursor_index += 1;
                 while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
                     *cursor_index += 1;
                 }
             }
-            if is_key_pressed_repeated(rl, KeyboardKey::Backspace) && *cursor_index > 0 {
+            if is_key_pressed_repeated(rl, Key::Backspace) && *cursor_index > 0 {
                 *cursor_index -= 1;
                 while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
                     *cursor_index -= 1;
@@ -450,13 +443,13 @@ impl<'a> Keal<'a> {
         }
 
         // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
-        let ctrl = is_key_down(rl, KeyboardKey::LeftControl);
-        if is_key_pressed_repeated(rl, KeyboardKey::Down) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::J)) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::N)) {
+        let ctrl = is_key_down(rl, Key::LeftControl);
+        if is_key_pressed_repeated(rl, Key::Down) || (ctrl && is_key_pressed_repeated(rl, Key::J)) || (ctrl && is_key_pressed_repeated(rl, Key::N)) {
             // TODO: gently scroll window to selected choice
             self.selected += 1;
             self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
         }
-        if is_key_pressed_repeated(rl, KeyboardKey::Up) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::K)) || (ctrl && is_key_pressed_repeated(rl, KeyboardKey::P)) {
+        if is_key_pressed_repeated(rl, Key::Up) || (ctrl && is_key_pressed_repeated(rl, Key::K)) || (ctrl && is_key_pressed_repeated(rl, Key::P)) {
             self.selected = self.selected.saturating_sub(1);
         }
 
@@ -472,14 +465,14 @@ impl<'a> Keal<'a> {
                     self.manager.send(async_manager::Event::Launch(selected));
                 }
                 Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
-                Message::Entries(entries) => self.entries = Entries::new(entries, rl, &mut self.atlas),
+                Message::Entries(entries) => self.entries = Entries::new(entries, rl, &self.font),
                 Message::Action(action) => return self.handle_action(rl, action),
             };
         }
     }
 }
 
-impl Keal<'_> {
+impl Keal {
     pub fn update_input(&mut self, from_user: bool) {
         self.manager.send(async_manager::Event::UpdateInput(self.input.clone(), from_user));
     }
