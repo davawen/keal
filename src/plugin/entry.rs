@@ -50,7 +50,7 @@ impl<'a> Entry<'a> {
     pub fn new(matcher: &mut Matcher, pattern: &Pattern, charbuf: &mut Vec<char>, name: &'a str, icon: Option<&'a IconPath>, comment: Option<&'a str>, index: usize) -> Option<Self> {
         let a = pattern.score(Utf32Str::new(name, charbuf), matcher);
         let b = comment.and_then(|comment| pattern.score(Utf32Str::new(comment, charbuf), matcher));
-        let score = a.map(|a| b.map(|b| a + b).unwrap_or(a)).or(b)?;
+        let score = a.map(|a| b.map(|b| a + b).unwrap_or(2*a)).or(b)?;
 
         Some(Self { name, icon, comment, score, label: Label::index(index) })
     }
