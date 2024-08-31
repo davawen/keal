@@ -1,4 +1,4 @@
-use std::{os::unix::process::CommandExt, sync::mpsc::{channel, Receiver, Sender, TryRecvError}};
+use std::{ffi::{CStr, CString}, os::unix::process::CommandExt, sync::mpsc::{channel, Receiver, Sender, TryRecvError}};
 
 use fork::{fork, Fork};
 use raylib::prelude::*;
@@ -21,6 +21,78 @@ pub type TTFCache = TrueTypeFontCache;
 fn is_key_pressed_repeated(rl: &mut Raylib, key: Key) -> bool {
     is_key_pressed(rl, key) || is_key_pressed_again(rl, key)
 }
+
+/// Returns the index of the unicode character to the left of the given index
+/// Saturates at the left edge of the string
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    if index == 0 { return 0 }
+
+    index -= 1;
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+/// Returns the index of the unicode character to the right of the given index
+/// Saturates at the string's length
+/// Caution: this means the returned index can be out of bounds
+fn ceil_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() { return s.len() }
+
+    index += 1;
+    while index < s.len() && !s.is_char_boundary(index) {
+        index += 1;
+    }
+    index
+}
+
+/// Returns the index of the first character left of the given index
+/// before a character that isn't an alphanumeric,
+/// skipping any non-alphanumeric characters at the start.
+fn floor_word_boundary(s: &str, mut index: usize) -> usize {
+    let is_alphanum = |idx| s[idx..].chars().next().unwrap().is_alphanumeric();
+
+    // skip non-alphanumeric characters at the start
+    loop {
+        index = floor_char_boundary(s, index);
+        if index == 0 { return index };
+
+        if is_alphanum(index) { break; }
+    }
+
+    loop {
+        let next = floor_char_boundary(s, index);
+        if next == 0 { return next }
+
+        if !is_alphanum(next) { break index }
+
+        index = next;
+    }
+}
+
+/// Returns the index of the first character right of the given index
+/// before a character that isn't an alphanumeric
+/// skipping any non-alphanumeric characters at the start.
+fn ceil_word_boundary(s: &str, mut index: usize) -> usize {
+    let is_alphanum = |idx| s[idx..].chars().next().unwrap().is_alphanumeric();
+
+    // skip non-alphanumeric characters at the start
+    loop {
+        index = ceil_char_boundary(s, index);
+        if index == s.len() { return index };
+
+        if is_alphanum(index) { break; }
+    }
+
+    loop {
+        index = ceil_char_boundary(s, index);
+        if index == s.len() { return index }
+
+        if !is_alphanum(index) { break index }
+    }
+}
+
 
 /// order of border radius is: `[top-left, top-right, bot-left, bot-right]`
 fn draw_rectangle_rounded(rl: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, mut borders: [f32; 4], color: Color) {
@@ -384,11 +456,20 @@ impl Keal {
             let _ = self.message_sender.send(Message::Launch(Some(self.entries.list[self.selected].label)));
         }
 
+        let ctrl = is_key_down(rl, Key::LeftControl) || is_key_down(rl, Key::RightControl);
+        let shift = is_key_down(rl, Key::LeftShift) || is_key_down(rl, Key::RightShift);
+
         if let Some(cursor_index) = &mut self.cursor_index {
             self.cursor_tick += 1;
 
             let mut modified = false;
             while let Some(ch) = get_char_pressed(rl) {
+                if let Some((start, end)) = self.select_range { // remove selected text
+                    *cursor_index = start;
+                    self.input.drain(start..end);
+                    self.select_range = None;
+                }
+
                 self.input.insert(*cursor_index, ch);
                 *cursor_index += ch.len_utf8();
 
@@ -396,43 +477,120 @@ impl Keal {
                 modified = true;
             }
 
-            let shift = is_key_down(rl, Key::LeftShift) || is_key_down(rl, Key::RightShift);
-            if is_key_pressed_repeated(rl, Key::Left) && *cursor_index > 0 {
-                let old_index = *cursor_index;
-                
-                *cursor_index -= 1;
-                while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
-                    *cursor_index -= 1;
+            if ctrl {
+                if is_key_pressed(rl, Key::A) {
+                    self.select_range = Some((0, self.input.len()));
                 }
+                if is_key_pressed(rl, Key::C) {
+                    if let Some((start, end)) = self.select_range {
+                        let text = &self.input[start..end];
+                        set_clipboard_text(rl, &CString::new(text).unwrap());
+                    }
+                }
+                if is_key_pressed(rl, Key::X) {
+                    if let Some((start, end)) = self.select_range {
+                        *cursor_index = start; // in case we expanded the selection to the right
+                        self.select_range = None;
+
+                        let mut text = self.input.drain(start..end).collect::<String>().into_bytes();
+                        text.push(0);
+                        set_clipboard_text(rl, CStr::from_bytes_until_nul(&text).unwrap());
+                        modified = true;
+                    }
+                }
+                if is_key_pressed(rl, Key::V) {
+                    if let Some((start, end)) = self.select_range {
+                        *cursor_index = start; // in case we expanded the selection to the right
+                        self.input.drain(start..end);
+                        self.select_range = None;
+                        modified = true;
+                    }
+
+                    match get_clipboard_text(rl).to_str() {
+                        Ok(text) if !text.is_empty() => {
+                            self.input.insert_str(*cursor_index, text);
+                            *cursor_index += text.len();
+                            modified = true;
+                        }
+                        _ => (),
+                    }
+                }
+            }
+
+            if is_key_pressed_repeated(rl, Key::Left) && *cursor_index > 0 {
+                self.cursor_tick = 0;
+                let old_index = *cursor_index;
+
+                let mut new_index = if ctrl {
+                    floor_word_boundary(&self.input, *cursor_index)
+                } else {
+                    floor_char_boundary(&self.input, *cursor_index)
+                };
 
                 if shift {
-                    if let Some((start, _)) = &mut self.select_range {
-                        *start = *cursor_index;
+                    if let Some((start, end)) = &mut self.select_range {
+                        if *start == old_index { // started on the left, expand selection
+                            *start = new_index;
+                        } else if *end == old_index { // started on the right, retract selection
+                            *end = new_index;
+                            if *start == *end { // went back to the start, remove selection
+                                self.select_range = None;
+                            }
+                        }
                     } else {
-                        self.select_range = Some((*cursor_index, old_index));
+                        self.select_range = Some((new_index, old_index));
                     }
-                } else {
+                } else if let Some((start, _)) = self.select_range {
                     self.select_range = None;
+                    // put cursor to the left of selection (matches behaviour on web browsers)
+                    new_index = start; 
                 }
+
+                *cursor_index = new_index;
             }
             if is_key_pressed_repeated(rl, Key::Right) && *cursor_index < self.input.len() {
-                *cursor_index += 1;
-                while *cursor_index < self.input.len() && !self.input.is_char_boundary(*cursor_index) {
-                    *cursor_index += 1;
+                self.cursor_tick = 0;
+                let old_index = *cursor_index;
+
+                let mut new_index = if ctrl {
+                    ceil_word_boundary(&self.input, *cursor_index)
+                } else {
+                    ceil_char_boundary(&self.input, *cursor_index)
+                };
+
+                if shift {
+                    if let Some((start, end)) = &mut self.select_range {
+                        if *start == old_index { // started on the left, retract selection
+                            *start = new_index;
+                            if *start == *end {  // went back to start, remove selection
+                                self.select_range = None;
+                            }
+                        } else if *end == old_index { // started on the right, expand selection
+                            *end = new_index;
+                        }
+                    } else {
+                        self.select_range = Some((old_index, new_index));
+                    }
+                } else if let Some((_, end)) = self.select_range {
+                    self.select_range = None;
+                    // put cursor to the right when going out of selection (matches behaviour on web browsers)
+                    new_index = end;
                 }
+
+                *cursor_index = new_index;
             }
-            if is_key_pressed_repeated(rl, Key::Backspace) && *cursor_index > 0 {
-                *cursor_index -= 1;
-                while *cursor_index > 0 && !self.input.is_char_boundary(*cursor_index) {
-                    *cursor_index -= 1;
+            if is_key_pressed_repeated(rl, Key::Backspace) {
+                if let Some((start, end)) = self.select_range { // remove selection
+                    *cursor_index = start; // in case we expanded the selection to the right
+                    self.input.drain(start..end);
+                    self.select_range = None;
+                } else if *cursor_index > 0 {
+                    *cursor_index = floor_char_boundary(&self.input, *cursor_index);
+                    self.input.remove(*cursor_index);
                 }
-                self.input.remove(*cursor_index);
                 modified = true;
             }
 
-            if get_key_pressed(rl).is_some() {
-                self.cursor_tick = 0;
-            }
 
             if modified {
                 self.update_input(true);
@@ -442,8 +600,8 @@ impl Keal {
             self.cursor_tick = 0;
         }
 
-        // KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
-        let ctrl = is_key_down(rl, Key::LeftControl);
+        if is_key_pressed(rl, Key::Escape) { quit(rl); }
+
         if is_key_pressed_repeated(rl, Key::Down) || (ctrl && is_key_pressed_repeated(rl, Key::J)) || (ctrl && is_key_pressed_repeated(rl, Key::N)) {
             // TODO: gently scroll window to selected choice
             self.selected += 1;
@@ -474,6 +632,13 @@ impl Keal {
 
 impl Keal {
     pub fn update_input(&mut self, from_user: bool) {
+
+        match &mut self.cursor_index {
+            Some(cursor_index) if from_user => *cursor_index = (*cursor_index).min(self.input.len()),
+            cursor_index => *cursor_index = Some(self.input.len())
+        }
+        self.select_range = None;
+
         self.manager.send(async_manager::Event::UpdateInput(self.input.clone(), from_user));
     }
 
@@ -492,8 +657,6 @@ impl Keal {
                 )).unwrap_or(new);
                 self.input = new;
                 self.update_input(false);
-
-                // return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
             Action::Exec(mut command) => {
                 let _ = command.0.exec();

@@ -215,7 +215,8 @@ dependencies = [
 
 [[package]]
 name = "raylib-bindings"
-version = "0.3.0"
+version = "0.3.1"
+source = "git+https://codeberg.org/davawen/raylib-bindings#5ffd4213642f5fa9c61c02a7ef5d8d805ec36add"
 dependencies = [
  "bitflags",
  "cmake",
