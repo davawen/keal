@@ -320,6 +320,7 @@ impl Keal {
         for (index, (entry, wrap_info)) in entries.list.iter().zip(entries.wrap_info.iter()).enumerate() {
             let max_height = wrap_info.0.height.max(wrap_info.1.as_ref().map(|x| x.height).unwrap_or(0.0));
             let next_offset_y = offset_y + max_height + 20.0;
+
             if next_offset_y < search_bar_height { 
                 offset_y = next_offset_y;
                 continue
@@ -602,13 +603,33 @@ impl Keal {
 
         if is_key_pressed(rl, Key::Escape) { quit(rl); }
 
+        // TODO: Refactor
+        let snap_selected_to_edge = |rl: &mut Raylib, this: &mut Keal| { // returns the
+            let search_bar_height = (config().font_size*3.25).ceil();
+            let mut offset_y = 0.0;
+            for (index, wrap_info) in this.entries.wrap_info.iter().enumerate() {
+                let max_height = wrap_info.0.height.max(wrap_info.1.as_ref().map(|x| x.height).unwrap_or(0.0));
+
+                if index == this.selected {
+                    this.scroll = this.scroll.clamp(
+                        offset_y - get_render_height(rl) + search_bar_height + max_height + 20.0,
+                        offset_y
+                    );
+                    break;
+                }
+
+                offset_y += max_height + 20.0;
+            }
+        };
+
         if is_key_pressed_repeated(rl, Key::Down) || (ctrl && is_key_pressed_repeated(rl, Key::J)) || (ctrl && is_key_pressed_repeated(rl, Key::N)) {
-            // TODO: gently scroll window to selected choice
             self.selected += 1;
             self.selected = self.selected.min(self.entries.list.len().saturating_sub(1));
+            snap_selected_to_edge(rl, self);
         }
         if is_key_pressed_repeated(rl, Key::Up) || (ctrl && is_key_pressed_repeated(rl, Key::K)) || (ctrl && is_key_pressed_repeated(rl, Key::P)) {
             self.selected = self.selected.saturating_sub(1);
+            snap_selected_to_edge(rl, self);
         }
 
         loop {
