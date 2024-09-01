@@ -158,10 +158,11 @@ impl PluginManager {
             (Some(((idx, plugin), remainder)), None) => { // launch plugin
                 self.usage.add_use(("List", &plugin.prefix));
                 
-                let execution = (plugin.generator)(plugin, self);
+                let mut execution = (plugin.generator)(plugin, self);
+                let action = execution.send_query(config(), remainder);
                 self.current = Some((idx, execution));
 
-                (remainder.to_owned(), Action::None)
+                (remainder.to_owned(), action)
             }
             (Some(((idx, plugin), remainder)), Some((execution_idx, execution))) => {
                 let remainder = remainder.to_owned();
