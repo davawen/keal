@@ -1,0 +1,13 @@
+[package]
+name = "keal_raylib"
+version = "0.7.2"
+edition = "2021"
+
+[dependencies]
+keal = { path = "../keal" }
+fork = "0.1.22"
+nucleo-matcher = "0.2.0"
+raylib-bindings = { version = "0.3.1", git = "https://codeberg.org/davawen/raylib-bindings", features = ["svg"] }
+anyhow = "1.0.86"
+indexmap = "2.5.0"
+smallvec = "1.13.2"
