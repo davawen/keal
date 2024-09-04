@@ -4,9 +4,9 @@ use fork::{fork, Fork};
 use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}, futures::channel::mpsc};
 use nucleo_matcher::Matcher;
 
-use crate::{icon::{IconCache, Icon}, config::config, plugin::{Action, entry::{Label, OwnedEntry}}, log_time};
+use keal::{icon::{IconCache, Icon}, config::config, plugin::{Action, entry::{Label, OwnedEntry}}, log_time};
 
-pub use styled::Theme;
+pub use crate::config::Theme;
 use styled::{ButtonStyle, TextStyle};
 
 use self::{match_span::MatchSpan, async_manager::AsyncManager};
@@ -16,6 +16,8 @@ mod match_span;
 mod async_manager;
 
 pub struct Keal {
+    theme: Theme,
+
     // UI state
     input: String,
     selected: usize,
@@ -49,16 +51,16 @@ impl Application for Keal {
     type Message = Message;
     type Theme = Theme;
     type Executor = executor::Default;
-    type Flags = ();
+    type Flags = Theme;
 
-    fn new(_: Self::Flags) -> (Self, iced::Command<Self::Message>) {
+    fn new(theme: Self::Flags) -> (Self, iced::Command<Self::Message>) {
         log_time("initializing app");
 
         let config = config();
 
         let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
-        let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
+        let iosevka = include_bytes!("../../../public/iosevka-regular.ttf");
         let iosevka = font::load(iosevka.as_slice()).map(Message::FontLoaded);
 
         let icon_theme = config.icon_theme.clone();
@@ -72,6 +74,7 @@ impl Application for Keal {
         log_time("finished initializing");
 
         (Keal {
+            theme,
             input: String::new(),
             selected: 0,
             icons: IconCache::default(),
@@ -97,7 +100,7 @@ impl Application for Keal {
     }
 
     fn theme(&self) -> Self::Theme {
-        config().theme.clone() // unfortunate clone, not sure how to get rid of this
+        self.theme.clone() // unfortunate clone, not sure how to get rid of this
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
@@ -133,7 +136,7 @@ impl Application for Keal {
                 }
 
                 for (span, highlighted) in MatchSpan::new(&entry.name, &mut data.matcher, &data.pattern, &mut buf) {
-                    item = item.push(text(span).size(config.font_size).shaping(config.text_shaping).style(
+                    item = item.push(text(span).size(config.font_size).shaping(self.theme.text_shaping).style(
                         match highlighted {
                             false => TextStyle::Normal,
                             true => TextStyle::Matched { selected },
@@ -147,7 +150,7 @@ impl Application for Keal {
                     item = item.push(
                         text(comment)
                             .size(config.font_size)
-                            .shaping(config.text_shaping)
+                            .shaping(self.theme.text_shaping)
                             .style(TextStyle::Comment)
                     );
                 }

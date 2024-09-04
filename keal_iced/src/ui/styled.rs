@@ -3,6 +3,8 @@ use iced::{
     Color, application,
 };
 
+use crate::config::Theme;
+
 /// Workaround for the iced `color!` macro not supporting const contexts
 #[macro_export]
 macro_rules! color {
@@ -23,30 +25,6 @@ macro_rules! color {
     ($hex:literal) => {
         color!($hex, 1.0)
     };
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Theme {
-    pub background: Color,
-
-    pub input_placeholder: Color,
-    pub input_selection: Color,
-    pub input_background: Color,
-
-    pub text: Color,
-    pub matched_text: Color,
-    pub selected_matched_text: Color,
-    pub comment: Color,
-
-    pub choice_background: Color,
-    pub selected_choice_background: Color,
-    pub hovered_choice_background: Color,
-    pub pressed_choice_background: Color,
-
-    pub scrollbar_enabled: bool,
-    pub scrollbar: Color,
-    pub hovered_scrollbar: Color,
-    pub scrollbar_border_radius: f32
 }
 
 impl application::StyleSheet for Theme {

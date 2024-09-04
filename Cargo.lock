@@ -1242,17 +1242,28 @@ dependencies = [
 
 [[package]]
 name = "keal"
-version = "0.7.1"
+version = "0.7.2"
+dependencies = [
+ "anyhow",
+ "bitflags 2.4.1",
+ "indexmap 2.1.0",
+ "nucleo-matcher",
+ "serde",
+ "serde_cbor",
+ "walkdir",
+]
+
+[[package]]
+name = "keal_iced"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "bitflags 2.4.1",
  "fork",
  "iced",
  "indexmap 2.1.0",
+ "keal",
  "nucleo-matcher",
- "serde",
- "serde_cbor",
- "walkdir",
 ]
 
 [[package]]

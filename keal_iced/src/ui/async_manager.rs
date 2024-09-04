@@ -3,7 +3,7 @@ use iced::{subscription::{Subscription, self }, futures::{channel::mpsc, SinkExt
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-use crate::{plugin::{PluginManager, entry::Label}, log_time};
+use keal::{plugin::{PluginManager, entry::Label}, log_time};
 
 use super::Message;
 

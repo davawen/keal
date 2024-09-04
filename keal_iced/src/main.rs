@@ -1,31 +1,13 @@
 #![allow(non_snake_case)]
 
-use std::sync::OnceLock;
-
-use arguments::{Arguments, arguments};
+use keal::{arguments::{self, Arguments}, log_time, start_log_time};
 use iced::{Application, Settings, window, Font, font};
 
 mod ui;
-mod icon;
 mod config;
-mod xdg_utils;
-mod ini_parser;
-mod plugin;
-
-mod arguments;
-
-static START: OnceLock<std::time::Instant> = OnceLock::new();
-fn log_time(s: impl ToString) {
-    if !arguments().timings { return }
-
-    let now = std::time::Instant::now();
-    let duration = now.duration_since(*START.get().unwrap());
-
-    eprintln!("[{}.{:03}]: {}", duration.as_secs(), duration.subsec_millis(), s.to_string());
-}
 
 fn main() -> anyhow::Result<()> {
-    START.get_or_init(std::time::Instant::now);
+    start_log_time();
     match Arguments::init() {
         Ok(_) => (),
         Err(arguments::Error::Exit) => return Ok(()),
@@ -34,7 +16,8 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let config = config::Config::init();
+    let mut theme = config::Theme::default();
+    let config = keal::config::Config::init(&mut theme);
 
     log_time("read config");
 
@@ -50,10 +33,11 @@ fn main() -> anyhow::Result<()> {
         },
         default_font: Font {
             family: font::Family::Name(config.font.clone().leak()),
-            weight: config.font_weight,
-            stretch: config.font_stretch,
+            weight: theme.font_weight,
+            stretch: theme.font_stretch,
             ..Default::default()
         },
+        flags: theme,
         ..Default::default()
     })?;
 
