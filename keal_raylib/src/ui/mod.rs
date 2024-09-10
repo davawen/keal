@@ -1,4 +1,4 @@
-use std::{ffi::{CStr, CString}, os::unix::process::CommandExt, sync::mpsc::{channel, Receiver, Sender, TryRecvError}};
+use std::{os::unix::process::CommandExt, sync::mpsc::{channel, Receiver, Sender, TryRecvError}};
 
 use fork::{fork, Fork};
 use raylib::prelude::*;
@@ -6,6 +6,7 @@ use nucleo_matcher::Matcher;
 use smallvec::SmallVec;
 
 use keal::{config::config, icon::{Icon, IconCache, IconPath}, log_time, plugin::{entry::{Label, OwnedEntry}, Action}};
+use text_input::TextInput;
 use crate::config::Theme;
 
 use self::{match_span::MatchSpan, async_manager::AsyncManager};
@@ -13,83 +14,13 @@ use self::{match_span::MatchSpan, async_manager::AsyncManager};
 mod match_span;
 mod async_manager;
 
+mod text_input;
+
 pub type TTFCache = TrueTypeFontCache;
 
 fn is_key_pressed_repeated(rl: &mut Raylib, key: Key) -> bool {
     is_key_pressed(rl, key) || is_key_pressed_again(rl, key)
 }
-
-/// Returns the index of the unicode character to the left of the given index
-/// Saturates at the left edge of the string
-fn floor_char_boundary(s: &str, mut index: usize) -> usize {
-    if index == 0 { return 0 }
-
-    index -= 1;
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
-
-/// Returns the index of the unicode character to the right of the given index
-/// Saturates at the string's length
-/// Caution: this means the returned index can be out of bounds
-fn ceil_char_boundary(s: &str, mut index: usize) -> usize {
-    if index >= s.len() { return s.len() }
-
-    index += 1;
-    while index < s.len() && !s.is_char_boundary(index) {
-        index += 1;
-    }
-    index
-}
-
-/// Returns the index of the first character left of the given index
-/// before a character that isn't an alphanumeric,
-/// skipping any non-alphanumeric characters at the start.
-fn floor_word_boundary(s: &str, mut index: usize) -> usize {
-    let is_alphanum = |idx| s[idx..].chars().next().unwrap().is_alphanumeric();
-
-    // skip non-alphanumeric characters at the start
-    loop {
-        index = floor_char_boundary(s, index);
-        if index == 0 { return index };
-
-        if is_alphanum(index) { break; }
-    }
-
-    loop {
-        let next = floor_char_boundary(s, index);
-        if next == 0 { return next }
-
-        if !is_alphanum(next) { break index }
-
-        index = next;
-    }
-}
-
-/// Returns the index of the first character right of the given index
-/// before a character that isn't an alphanumeric
-/// skipping any non-alphanumeric characters at the start.
-fn ceil_word_boundary(s: &str, mut index: usize) -> usize {
-    let is_alphanum = |idx| s[idx..].chars().next().unwrap().is_alphanumeric();
-
-    // skip non-alphanumeric characters at the start
-    loop {
-        index = ceil_char_boundary(s, index);
-        if index == s.len() { return index };
-
-        if is_alphanum(index) { break; }
-    }
-
-    loop {
-        index = ceil_char_boundary(s, index);
-        if index == s.len() { return index }
-
-        if !is_alphanum(index) { break index }
-    }
-}
-
 
 /// order of border radius is: `[top-left, top-right, bot-left, bot-right]`
 fn draw_rectangle_rounded(rl: &mut DrawHandle, x: f32, y: f32, w: f32, h: f32, mut borders: [f32; 4], color: Color) {
@@ -214,24 +145,19 @@ impl Entries {
 }
 
 pub struct Keal {
-    // UI state
-    input: String,
-    /// byte index of the cursor in the text input, None if the input is not selected
-    cursor_index: Option<usize>,
-    cursor_tick: usize,
-    /// byte indices of the start and end ranges of the selection
-    select_range: Option<(usize, usize)>,
+    // -- UI state --
+    input: text_input::TextInput,
+
     scroll: f32,
 
     selected: usize,
     hovered_choice: Option<usize>,
-    input_hovered: bool,
 
     old_screen_width: f32,
 
     rendered_icons: std::collections::HashMap<IconPath, Option<Texture>>,
 
-    // data state
+    // -- Data state --
     icons: IconCache,
     font: TrueTypeFontCache,
 
@@ -274,14 +200,10 @@ impl Keal {
         log_time("finished initializing");
 
         Keal {
-            input: String::new(),
-            cursor_index: Some(0),
-            cursor_tick: 0,
-            select_range: None,
+            input: TextInput::default(),
             scroll: 0.0,
             selected: 0,
             hovered_choice: None,
-            input_hovered: false,
             old_screen_width: 0.0,
             rendered_icons: Default::default(),
             icons: Default::default(),
@@ -400,32 +322,7 @@ impl Keal {
             offset_y = next_offset_y;
         }
 
-        // input
-        {
-            let text = if self.input.is_empty() && self.cursor_index.is_none() { &config.placeholder_text } else { &self.input };
-
-            let size = config.font_size*1.25;
-
-            let left_padding = config.font_size;
-            let baseline = (search_bar_height/2.0 - size/2.0).ceil();
-
-            draw_rectangle_rounded(rl, 0.0, 0.0, get_screen_width(rl), search_bar_height, [5.0, 5.0, 0.0, 0.0], theme.input_background);
-            draw_text(rl, font, &text, vec2(left_padding, baseline), size, theme.text);
-
-            if let Some((start, end)) = self.select_range {
-                let start_pos = if self.input.is_empty() { 0.0 } else { measure_text(font, &text[0..start], size).x };
-                let end_pos = if self.input.is_empty() { 0.0 } else { measure_text(font, &text[0..end], size).x };
-                draw_rectangle(rl, left_padding + start_pos - 1.0, baseline, end_pos - start_pos + 2.0, size + 5.0, theme.input_selection);
-            } else if let Some(cursor_index) = self.cursor_index {
-                let cursor_position = if self.input.is_empty() { 0.0 } else { measure_text(font, &text[0..cursor_index], size).x };
-
-                if self.cursor_tick % 60 < 30 {
-                    draw_rectangle(rl, left_padding + cursor_position - 1.0, baseline, 1.0, size + 5.0, Color::WHITE);
-                }
-            }
-
-            self.input_hovered = mouse.y >= 0.0 && mouse.y < search_bar_height;
-        }
+        self.input.render(rl, font, config, theme);
     }
 
     pub fn update(&mut self, rl: &mut Raylib) {
@@ -440,162 +337,14 @@ impl Keal {
             if is_mouse_button_pressed(rl, MouseButton::Left) {
                 self.message_sender.send(Message::Launch(Some(self.entries.list[hovered_choice].label))).expect("message reciever destroyed");
             }
-        } else if self.input_hovered {
-            set_mouse_cursor(rl, MouseCursor::Ibeam);
+        } 
 
-            if is_mouse_button_pressed(rl, MouseButton::Left) {
-                self.cursor_index = Some(0);
-            }
-        } else {
-            set_mouse_cursor(rl, MouseCursor::Default);
+        if self.input.update(rl) {
+            self.update_input(true);
         }
 
         if is_key_pressed(rl, Key::Enter) {
             let _ = self.message_sender.send(Message::Launch(Some(self.entries.list[self.selected].label)));
-        }
-
-        let ctrl = is_key_down(rl, Key::LeftControl) || is_key_down(rl, Key::RightControl);
-        let shift = is_key_down(rl, Key::LeftShift) || is_key_down(rl, Key::RightShift);
-
-        if let Some(cursor_index) = &mut self.cursor_index {
-            self.cursor_tick += 1;
-
-            let mut modified = false;
-            while let Some(ch) = get_char_pressed(rl) {
-                if let Some((start, end)) = self.select_range { // remove selected text
-                    *cursor_index = start;
-                    self.input.drain(start..end);
-                    self.select_range = None;
-                }
-
-                self.input.insert(*cursor_index, ch);
-                *cursor_index += ch.len_utf8();
-
-                self.cursor_tick = 0;
-                modified = true;
-            }
-
-            if ctrl {
-                if is_key_pressed(rl, Key::A) {
-                    self.select_range = Some((0, self.input.len()));
-                }
-                if is_key_pressed(rl, Key::C) {
-                    if let Some((start, end)) = self.select_range {
-                        let text = &self.input[start..end];
-                        set_clipboard_text(rl, &CString::new(text).unwrap());
-                    }
-                }
-                if is_key_pressed(rl, Key::X) {
-                    if let Some((start, end)) = self.select_range {
-                        *cursor_index = start; // in case we expanded the selection to the right
-                        self.select_range = None;
-
-                        let mut text = self.input.drain(start..end).collect::<String>().into_bytes();
-                        text.push(0);
-                        set_clipboard_text(rl, CStr::from_bytes_until_nul(&text).unwrap());
-                        modified = true;
-                    }
-                }
-                if is_key_pressed(rl, Key::V) {
-                    if let Some((start, end)) = self.select_range {
-                        *cursor_index = start; // in case we expanded the selection to the right
-                        self.input.drain(start..end);
-                        self.select_range = None;
-                        modified = true;
-                    }
-
-                    match get_clipboard_text(rl).to_str() {
-                        Ok(text) if !text.is_empty() => {
-                            self.input.insert_str(*cursor_index, text);
-                            *cursor_index += text.len();
-                            modified = true;
-                        }
-                        _ => (),
-                    }
-                }
-            }
-
-            if is_key_pressed_repeated(rl, Key::Left) && *cursor_index > 0 {
-                self.cursor_tick = 0;
-                let old_index = *cursor_index;
-
-                let mut new_index = if ctrl {
-                    floor_word_boundary(&self.input, *cursor_index)
-                } else {
-                    floor_char_boundary(&self.input, *cursor_index)
-                };
-
-                if shift {
-                    if let Some((start, end)) = &mut self.select_range {
-                        if *start == old_index { // started on the left, expand selection
-                            *start = new_index;
-                        } else if *end == old_index { // started on the right, retract selection
-                            *end = new_index;
-                            if *start == *end { // went back to the start, remove selection
-                                self.select_range = None;
-                            }
-                        }
-                    } else {
-                        self.select_range = Some((new_index, old_index));
-                    }
-                } else if let Some((start, _)) = self.select_range {
-                    self.select_range = None;
-                    // put cursor to the left of selection (matches behaviour on web browsers)
-                    new_index = start; 
-                }
-
-                *cursor_index = new_index;
-            }
-            if is_key_pressed_repeated(rl, Key::Right) && *cursor_index < self.input.len() {
-                self.cursor_tick = 0;
-                let old_index = *cursor_index;
-
-                let mut new_index = if ctrl {
-                    ceil_word_boundary(&self.input, *cursor_index)
-                } else {
-                    ceil_char_boundary(&self.input, *cursor_index)
-                };
-
-                if shift {
-                    if let Some((start, end)) = &mut self.select_range {
-                        if *start == old_index { // started on the left, retract selection
-                            *start = new_index;
-                            if *start == *end {  // went back to start, remove selection
-                                self.select_range = None;
-                            }
-                        } else if *end == old_index { // started on the right, expand selection
-                            *end = new_index;
-                        }
-                    } else {
-                        self.select_range = Some((old_index, new_index));
-                    }
-                } else if let Some((_, end)) = self.select_range {
-                    self.select_range = None;
-                    // put cursor to the right when going out of selection (matches behaviour on web browsers)
-                    new_index = end;
-                }
-
-                *cursor_index = new_index;
-            }
-            if is_key_pressed_repeated(rl, Key::Backspace) {
-                if let Some((start, end)) = self.select_range { // remove selection
-                    *cursor_index = start; // in case we expanded the selection to the right
-                    self.input.drain(start..end);
-                    self.select_range = None;
-                } else if *cursor_index > 0 {
-                    *cursor_index = floor_char_boundary(&self.input, *cursor_index);
-                    self.input.remove(*cursor_index);
-                }
-                modified = true;
-            }
-
-
-            if modified {
-                self.update_input(true);
-            }
-
-        } else {
-            self.cursor_tick = 0;
         }
 
         if is_key_pressed(rl, Key::Escape) { quit(rl); }
@@ -618,6 +367,8 @@ impl Keal {
                 offset_y += max_height + 20.0;
             }
         };
+
+        let ctrl = is_key_down(rl, Key::LeftControl) || is_key_down(rl, Key::RightControl);
 
         if is_key_pressed_repeated(rl, Key::Down) || (ctrl && is_key_pressed_repeated(rl, Key::J)) || (ctrl && is_key_pressed_repeated(rl, Key::N)) {
             self.selected += 1;
@@ -650,14 +401,9 @@ impl Keal {
 
 impl Keal {
     pub fn update_input(&mut self, from_user: bool) {
+        self.input.update_input(from_user);
 
-        match &mut self.cursor_index {
-            Some(cursor_index) if from_user => *cursor_index = (*cursor_index).min(self.input.len()),
-            cursor_index => *cursor_index = Some(self.input.len())
-        }
-        self.select_range = None;
-
-        self.manager.send(async_manager::Event::UpdateInput(self.input.clone(), from_user));
+        self.manager.send(async_manager::Event::UpdateInput(self.input.text.clone(), from_user));
     }
 
     fn handle_action(&mut self, rl: &mut Raylib, action: Action) /* -> Command<Message> */ {
@@ -665,7 +411,7 @@ impl Keal {
             Action::None => (),
             Action::ChangeInput(new) => {
                 self.manager.with_manager(|m| m.kill());
-                self.input = new;
+                self.input.text = new;
                 self.update_input(false);
                 // return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
@@ -673,7 +419,7 @@ impl Keal {
                 let new = self.manager.use_manager(|m| m.current().map(
                     |plugin| format!("{} {}", plugin.prefix, new) 
                 )).unwrap_or(new);
-                self.input = new;
+                self.input.text = new;
                 self.update_input(false);
             }
             Action::Exec(mut command) => {

@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use keal::{arguments::{Arguments, arguments, self}, start_log_time, log_time};
+use keal::{arguments::{Arguments, self}, start_log_time, log_time};
 use ui::Keal;
 use raylib::prelude::*;
 
@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     log_time("reading config");
 
     let mut theme = config::Theme::default();
-    let config = keal::config::Config::init(&mut theme);
+    let _config = keal::config::Config::init(&mut theme);
 
     log_time("initilizing window");
 
