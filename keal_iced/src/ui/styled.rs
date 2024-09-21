@@ -27,11 +27,9 @@ macro_rules! color {
     };
 }
 
-impl application::StyleSheet for Theme {
-    type Style = ();
-
-    fn appearance(&self, _: &Self::Style) -> application::Appearance {
-        application::Appearance {
+impl application::DefaultStyle for Theme {
+    fn default_style(&self) -> application::Appearance {
+         application::Appearance {
             text_color: self.text,
             background_color: self.background 
         }
@@ -48,10 +46,11 @@ pub enum TextStyle {
     Comment
 }
 
-impl text::StyleSheet for Theme {
-    type Style = TextStyle;
-    fn appearance(&self, style: Self::Style) -> text::Appearance {
-        text::Appearance { 
+impl text::Catalog for Theme {
+    type Class<'a> = TextStyle;
+
+    fn style(&self, style: &Self::Class<'_>) -> text::Style {
+        text::Style { 
             color: Some(match style {
                 TextStyle::Normal => self.text,
                 TextStyle::Matched { selected: false } => self.matched_text,
@@ -60,26 +59,31 @@ impl text::StyleSheet for Theme {
             })
         }
     }
+
+    fn default<'a>() -> Self::Class<'a> {
+        TextStyle::default()
+    }
 }
 
-impl text_input::StyleSheet for Theme {
-    type Style = ();
+impl text_input::Catalog for Theme {
+    type Class<'a> = ();
 
-    fn active(&self, _: &Self::Style) -> text_input::Appearance {
-        text_input::Appearance {
+    fn default<'a>() -> Self::Class<'a> { () }
+
+    fn style(&self, class: &Self::Class<'_>, _status: text_input::Status) -> text_input::Style {
+        text_input::Style {
             background: self.input_background.into(),
-            border_radius: [5.0, 5.0, 0.0, 0.0].into(),
-            icon_color: Color::TRANSPARENT, border_width: 0.0, border_color: Color::TRANSPARENT
+            border: iced::Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: iced::border::top(5.0)
+            },
+            icon: Color::TRANSPARENT,
+            value: self.text,
+            placeholder: self.input_placeholder,
+            selection: self.input_selection
         }
     }
-
-    fn focused(&self, style: &Self::Style) -> text_input::Appearance { self.active(style) }
-    fn disabled(&self, style: &Self::Style) -> text_input::Appearance { self.active(style) }
-
-    fn placeholder_color(&self, _: &Self::Style) -> Color { self.input_placeholder }
-    fn value_color(&self, _: &Self::Style) -> Color { self.text }
-    fn disabled_color(&self, style: &Self::Style) -> Color { self.value_color(style) }
-    fn selection_color(&self, _: &Self::Style) -> Color { self.input_selection }
 }
 
 #[derive(Default)]
@@ -89,83 +93,82 @@ pub enum ButtonStyle {
     Selected
 }
 
-impl button::StyleSheet for Theme {
-    type Style = ButtonStyle;
+impl button::Catalog for Theme {
+    type Class<'a> = ButtonStyle;
 
-    fn active(&self, style: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            background: Some(match style {
-                ButtonStyle::Normal => self.choice_background,
-                ButtonStyle::Selected => self.selected_choice_background
+    fn default<'a>() -> Self::Class<'a> { ButtonStyle::default() }
+
+    fn style(&self, style: &Self::Class<'_>, status: button::Status) -> button::Style {
+        button::Style {
+            background: Some(match status {
+                button::Status::Active => match style {
+                    ButtonStyle::Normal => self.choice_background,
+                    ButtonStyle::Selected => self.selected_choice_background
+                }
+                button::Status::Hovered => self.hovered_choice_background,
+                button::Status::Pressed => self.pressed_choice_background,
+                button::Status::Disabled => color!(0xdddddd)
             }.into()),
             text_color: self.text,
             ..Default::default()
         }
     }
+}
 
-    fn hovered(&self, _: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            background: Some(self.hovered_choice_background.into()),
-            text_color: self.text,
-            ..Default::default()
-        }
-    }
+impl container::Catalog for Theme {
+    type Class<'a> = ();
 
-    fn pressed(&self, _: &Self::Style) -> button::Appearance {
-        button::Appearance {
-            background: Some(self.pressed_choice_background.into()),
-            text_color: self.text,
-            ..Default::default()
-        }
+    fn default<'a>() -> Self::Class<'a> { () }
+
+    fn style(&self, class: &Self::Class<'_>) -> container::Style {
+        container::Style { text_color: Some(self.text), ..Default::default() }
     }
 }
 
-impl container::StyleSheet for Theme {
-    type Style = ();
+impl scrollable::Catalog for Theme {
+    type Class<'a> = ();
 
-    fn appearance(&self, _: &Self::Style) -> container::Appearance {
-        container::Appearance {
-            text_color: Some(self.text),
-            ..Default::default()
-        }
-    }
-}
+    fn default<'a>() -> Self::Class<'a> { () }
 
-impl scrollable::StyleSheet for Theme {
-    type Style = ();
-
-    fn active(&self, _: &Self::Style) -> scrollable::Scrollbar {
-        scrollable::Scrollbar {
-            background: None,
-            border_radius: 0.0.into(),
-            border_width: 0.0,
-            border_color: Color::TRANSPARENT,
-            scroller: scrollable::Scroller {
-                color: if self.scrollbar_enabled { self.scrollbar } else { Color::TRANSPARENT },
-                border_color: Color::TRANSPARENT,
-                border_radius: self.scrollbar_border_radius.into(),
-                border_width: 0.0
+    fn style(&self, class: &Self::Class<'_>, status: scrollable::Status) -> scrollable::Style {
+        let mut style = scrollable::Style {
+            container: container::Style::default(),
+            gap: None,
+            vertical_rail: scrollable::Rail {
+                background: None,
+                scroller: scrollable::Scroller {
+                    color: if self.scrollbar_enabled { self.scrollbar } else { Color::TRANSPARENT },
+                    border: iced::Border::default(),
+                },
+                border: iced::Border::default()
+            },
+            horizontal_rail: scrollable::Rail {
+                border: iced::Border::default(),
+                background: None,
+                scroller: scrollable::Scroller {
+                    color: Color::TRANSPARENT,
+                    border: iced::Border::default()
+                }
             }
-        }
-    }
+        };
 
-    fn hovered(
-            &self,
-            style: &Self::Style,
-            is_mouse_over_scrollbar: bool,
-        ) -> scrollable::Scrollbar {
-        let mut normal = self.active(style);
-        if is_mouse_over_scrollbar && self.scrollbar_enabled {
-            normal.scroller.color = self.hovered_scrollbar;
+        match status {
+            scrollable::Status::Hovered { .. } | scrollable::Status::Dragged { .. } if self.scrollbar_enabled => {
+                style.vertical_rail.scroller.color = self.hovered_scrollbar;
+            }
+            _ => ()
         }
-        normal
+
+        style
     }
 }
 
-impl svg::StyleSheet for Theme {
-    type Style = ();
+impl svg::Catalog for Theme {
+    type Class<'a> = ();
 
-    fn appearance(&self, _: &Self::Style) -> svg::Appearance {
-        svg::Appearance { color: None }
+    fn style(&self, _: &Self::Class<'_>, _status: svg::Status) -> svg::Style {
+        svg::Style::default()
     }
+
+    fn default<'a>() -> Self::Class<'a> { () }
 }

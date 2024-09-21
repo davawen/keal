@@ -8,6 +8,10 @@ keal = { path = "../keal" }
 anyhow = "1.0.75"
 bitflags = "2.4.1"
 fork = "0.1.22"
-iced = { version = "0.10.0", features = ["image", "svg", "web-colors"] }
+iced = { version = "0.13.1", features = ["advanced", "image", "svg", "web-colors"] }
 indexmap = "2.1.0"
 nucleo-matcher = "0.2.0"
+
+# Optimize iced in debug mode
+[profile.dev.package.iced]
+opt-level = 3

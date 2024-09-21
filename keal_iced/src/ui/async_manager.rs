@@ -1,5 +1,5 @@
 use std::sync::{Mutex, Arc, MutexGuard};
-use iced::{subscription::{Subscription, self }, futures::{channel::mpsc, SinkExt, StreamExt}};
+use iced::{futures::{channel::mpsc, SinkExt, Stream, StreamExt}, Subscription};
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
@@ -28,14 +28,14 @@ pub struct Data {
 }
 
 impl AsyncManager {
-    pub fn subscription(&self) -> Subscription<super::Message> {
+    pub fn subscription(&self) -> impl Stream<Item = super::Message> {
         let manager = self.manager.clone();
 
         let data = self.data.clone();
         let num_entries = self.num_entries;
         let sort_by_usage = self.sort_by_usage;
 
-        subscription::channel("manager", 50, move |mut output| async move {
+        iced::stream::channel(50, move |mut output| async move {
             {
                 log_time("locking sync manager");
                 let mut manager = manager.lock().unwrap();

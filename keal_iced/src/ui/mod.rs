@@ -1,7 +1,7 @@
 use std::os::unix::process::CommandExt;
 
 use fork::{fork, Fork};
-use iced::{Application, executor, Command, widget::{row as irow, text_input, column as icolumn, container, text, Space, scrollable, button, image, svg}, font, Element, Length, subscription, Event, keyboard::{self, KeyCode, Modifiers}, futures::channel::mpsc};
+use iced::{futures::channel::mpsc, keyboard::{self, key::{Key, Named}, Modifiers}, widget::{button, column as icolumn, container, image, row as irow, scrollable, svg, text, text_input, Space}, Element, Length, Padding, Subscription, Task};
 use nucleo_matcher::Matcher;
 
 use keal::{icon::{IconCache, Icon}, config::config, plugin::{Action, entry::{Label, OwnedEntry}}, log_time};
@@ -16,6 +16,7 @@ mod match_span;
 mod async_manager;
 
 pub struct Keal {
+    // Global state
     theme: Theme,
 
     // UI state
@@ -37,38 +38,39 @@ pub enum Message {
     // UI events
     TextInput(String),
     Launch(Option<Label>),
-    Event(keyboard::Event),
+    KeyPress(Key, Modifiers),
 
     // Worker events
-    FontLoaded(Result<(), font::Error>),
     IconCacheLoaded(IconCache),
     SenderLoaded(mpsc::Sender<async_manager::Event>),
     Entries(Vec<OwnedEntry>),
-    Action(Action)
+    Action(Action),
 }
 
-impl Application for Keal {
-    type Message = Message;
-    type Theme = Theme;
-    type Executor = executor::Default;
-    type Flags = Theme;
+fn close_main_window() -> Task<Message> {
+    iced::window::get_oldest().and_then(|id| {
+        iced::window::close(id)
+    })
+}
 
-    fn new(theme: Self::Flags) -> (Self, iced::Command<Self::Message>) {
+impl Keal {
+    pub fn theme(&self) -> Theme {
+        self.theme.clone()
+    }
+
+    pub fn new(theme: Theme) -> (Self, Task<Message>) {
         log_time("initializing app");
 
         let config = config();
 
         let focus = text_input::focus(text_input::Id::new("query_input")); // focus input on start up
 
-        let iosevka = include_bytes!("../../../public/iosevka-regular.ttf");
-        let iosevka = font::load(iosevka.as_slice()).map(Message::FontLoaded);
-
         let icon_theme = config.icon_theme.clone();
-        let load_icons = Command::perform(async move {
+        let load_icons = Task::perform(async move {
             IconCache::new(&icon_theme)
         }, Message::IconCacheLoaded);
 
-        let command = Command::batch(vec![iosevka, focus, load_icons]);
+        let command = Task::batch(vec![focus, load_icons]);
         let manager = AsyncManager::new(Matcher::default(), 50, true);
 
         log_time("finished initializing");
@@ -85,25 +87,16 @@ impl Application for Keal {
         }, command)
     }
 
-    fn subscription(&self) -> iced::Subscription<Self::Message> {
-        let events = subscription::events_with(|event, _status| match event {
-            Event::Keyboard(k) => Some(Message::Event(k)),
-            _ => None
+    pub fn subscription(&self) -> iced::Subscription<Message> {
+        let key_press = keyboard::on_key_press(|key, mods| {
+            Some(Message::KeyPress(key, mods))
         });
 
-        let manager = self.manager.subscription();
-        subscription::Subscription::batch([events, manager])
+        let manager = Subscription::run_with_id("manager", self.manager.subscription());
+        Subscription::batch([key_press, manager])
     }
 
-    fn title(&self) -> String {
-        "Keal".to_owned()
-    }
-
-    fn theme(&self) -> Self::Theme {
-        self.theme.clone() // unfortunate clone, not sure how to get rid of this
-    }
-
-    fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
+    pub fn view(&self) -> iced::Element<'_, Message, Theme> {
         let entries = &self.entries;
         let config = config();
 
@@ -136,7 +129,7 @@ impl Application for Keal {
                 }
 
                 for (span, highlighted) in MatchSpan::new(&entry.name, &mut data.matcher, &data.pattern, &mut buf) {
-                    item = item.push(text(span).size(config.font_size).shaping(self.theme.text_shaping).style(
+                    item = item.push(text(span).size(config.font_size).shaping(self.theme.text_shaping).class(
                         match highlighted {
                             false => TextStyle::Normal,
                             true => TextStyle::Matched { selected },
@@ -151,17 +144,16 @@ impl Application for Keal {
                         text(comment)
                             .size(config.font_size)
                             .shaping(self.theme.text_shaping)
-                            .style(TextStyle::Comment)
+                            .class(TextStyle::Comment)
                     );
                 }
 
                 button(item)
                     .on_press(Message::Launch(Some(entry.label)))
-                    .style(if selected { ButtonStyle::Selected } else { ButtonStyle::Normal })
-                    .padding([10, 20, 10, 10])
+                    .class(if selected { ButtonStyle::Selected } else { ButtonStyle::Normal })
+                    .padding(Padding { right: 20.0, ..Padding::new(10.0) })
             })
                 .map(Element::<_, _>::from)
-                .collect()
         })).id(scrollable::Id::new("scrollable"));
 
         icolumn![ input, entries ]
@@ -169,7 +161,7 @@ impl Application for Keal {
             .into()
     }
 
-    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         if !self.first_event {
             self.first_event = true;
             log_time("recieved first event");
@@ -177,17 +169,16 @@ impl Application for Keal {
 
         // iced::window::fetch_size(f)
         // scrollable::Properties::default().width
-        use keyboard::Event::KeyPressed;
+
         match message {
-            Message::Event(event) => match event {
-                KeyPressed { key_code: KeyCode::Escape, .. } => return iced::window::close(),
+            Message::KeyPress(key, mods) => match (key.as_ref(), mods) {
+                (Key::Named(Named::Escape), _) => return close_main_window(),
                 // TODO: gently scroll window to selected choice
-                KeyPressed { key_code: KeyCode::J, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::N, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::Down, .. } => {
+                (Key::Character("j" | "n"), Modifiers::CTRL)  | (Key::Named(Named::ArrowDown), _)  => {
                     self.selected += 1;
                     self.selected = self.selected.min(self.entries.len().saturating_sub(1));
                 }
-                KeyPressed { key_code: KeyCode::K, modifiers: Modifiers::CTRL } | KeyPressed { key_code: KeyCode::P, modifiers: Modifiers::CTRL }
-                | KeyPressed { key_code: KeyCode::Up, .. } => {
+                (Key::Character("k" | "p"), Modifiers::CTRL) | (Key::Named(Named::ArrowUp), _) => {
                     self.selected = self.selected.saturating_sub(1);
                 }
                 _ => ()
@@ -198,7 +189,6 @@ impl Application for Keal {
                     sender.try_send(async_manager::Event::Launch(selected)).expect("failed to send launch command");
                 }
             }
-            Message::FontLoaded(_) => (),
             Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
             Message::Entries(entries) => self.entries = entries,
             Message::SenderLoaded(sender) => {
@@ -208,7 +198,7 @@ impl Application for Keal {
             Message::Action(action) => return self.handle_action(action),
         };
 
-        Command::none()
+        Task::none()
     }
 }
 
@@ -220,7 +210,7 @@ impl Keal {
         }
     }
 
-    fn handle_action(&mut self, action: Action) -> Command<Message> {
+    fn handle_action(&mut self, action: Action) -> Task<Message> {
         match action {
             Action::None => (),
             Action::ChangeInput(new) => {
@@ -238,22 +228,22 @@ impl Keal {
             }
             Action::Exec(mut command) => {
                 let _ = command.0.exec();
-                return iced::window::close();
+                return close_main_window();
             }
             Action::PrintAndClose(message) => {
                 println!("{message}");
-                return iced::window::close();
+                return close_main_window();
             }
             Action::Fork => match fork().expect("failed to fork") {
-                Fork::Parent(_) => return iced::window::close(),
+                Fork::Parent(_) => return close_main_window(),
                 Fork::Child => ()
             }
             Action::WaitAndClose => {
                 self.manager.with_manager(|m| m.wait());
-                return iced::window::close();
+                return close_main_window();
             }
         }
 
-        Command::none()
+        Task::none()
     }
 }
