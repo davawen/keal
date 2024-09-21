@@ -57,12 +57,12 @@ impl UserPlugin {
         let config = ini.remove_section("config").map(|c| c.into_map()).unwrap_or_default();
         let mut ini = ini.remove_section("plugin")?.into_map();
 
-        let exec = plugin_path.join(ini.remove("exec")?);
+        let exec = plugin_path.join(ini.swap_remove("exec")?);
         Some(Plugin {
-            name: ini.remove("name")?,
-            icon: ini.remove("icon").map(|i| IconPath::new(i, Some(plugin_path))),
-            comment: ini.remove("comment"),
-            prefix: ini.remove("prefix")?,
+            name: ini.swap_remove("name")?,
+            icon: ini.swap_remove("icon").map(|i| IconPath::new(i, Some(plugin_path))),
+            comment: ini.swap_remove("comment"),
+            prefix: ini.swap_remove("prefix")?,
             config,
             generator: Box::new(move |plugin, _| {
                 use std::process::{Stdio, Command};

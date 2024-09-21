@@ -48,17 +48,17 @@ impl DesktopEntry {
             if contained { return None }
         }
 
-        let name = ini.remove("Name")?;
-        let comment = ini.remove("Comment");
-        let icon = ini.remove("Icon").map(|i| IconPath::new(i, None));
+        let name = ini.swap_remove("Name")?;
+        let comment = ini.swap_remove("Comment");
+        let icon = ini.swap_remove("Icon").map(|i| IconPath::new(i, None));
         let to_match = format!("{name}{}{}{}{}",
             ini.get("GenericName").map(String::as_ref).unwrap_or(""),
             ini.get("Categories").map(String::as_ref).unwrap_or(""),
             ini.get("Keywords").map(String::as_ref).unwrap_or(""),
             comment.as_deref().unwrap_or(""),
         ).into();
-        let exec = parse_exec_key(ini.remove("Exec")?, &name, location, icon.as_ref());
-        let path = ini.remove("Path");
+        let exec = parse_exec_key(ini.swap_remove("Exec")?, &name, location, icon.as_ref());
+        let path = ini.swap_remove("Path");
         let terminal = ini.get("Terminal").map(|v| v == "true").unwrap_or(false);
 
         Some(DesktopEntry {
