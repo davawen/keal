@@ -7,7 +7,7 @@ A fast application launcher, that works under wayland, with the convenience and 
 ### With cargo:
 ```
 $ git clone https://github.com/davawen/keal
-$ cd keal
+$ cd keal/keal_iced
 $ cargo install --path .
 ```
 `keal` will now be located in `$CARGO_HOME/bin`.  

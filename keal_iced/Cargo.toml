@@ -3,6 +3,10 @@ name = "keal_iced"
 version = "0.7.2"
 edition = "2021"
 
+[[bin]]
+name = "keal"
+path = "src/main.rs"
+
 [dependencies]
 keal = { path = "../keal" }
 anyhow = "1.0.75"
