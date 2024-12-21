@@ -70,7 +70,7 @@ impl text_input::Catalog for Theme {
 
     fn default<'a>() -> Self::Class<'a> { () }
 
-    fn style(&self, class: &Self::Class<'_>, _status: text_input::Status) -> text_input::Style {
+    fn style(&self, _class: &Self::Class<'_>, _status: text_input::Status) -> text_input::Style {
         text_input::Style {
             background: self.input_background.into(),
             border: iced::Border {
@@ -120,7 +120,7 @@ impl container::Catalog for Theme {
 
     fn default<'a>() -> Self::Class<'a> { () }
 
-    fn style(&self, class: &Self::Class<'_>) -> container::Style {
+    fn style(&self, _class: &Self::Class<'_>) -> container::Style {
         container::Style { text_color: Some(self.text), ..Default::default() }
     }
 }
@@ -130,7 +130,7 @@ impl scrollable::Catalog for Theme {
 
     fn default<'a>() -> Self::Class<'a> { () }
 
-    fn style(&self, class: &Self::Class<'_>, status: scrollable::Status) -> scrollable::Style {
+    fn style(&self, _class: &Self::Class<'_>, status: scrollable::Status) -> scrollable::Style {
         let mut style = scrollable::Style {
             container: container::Style::default(),
             gap: None,

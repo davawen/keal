@@ -1,5 +1,5 @@
 use std::sync::{Mutex, Arc, MutexGuard};
-use iced::{futures::{channel::mpsc, SinkExt, Stream, StreamExt}, Subscription};
+use iced::futures::{channel::mpsc, SinkExt, Stream, StreamExt};
 
 use nucleo_matcher::{Matcher, pattern::Pattern};
 

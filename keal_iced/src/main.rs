@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use keal::{arguments::{self, Arguments}, log_time, start_log_time};
-use iced::{Settings, window, Font, font};
+use iced::{window, Font};
 use ui::Keal;
 
 mod ui;
