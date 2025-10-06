@@ -11,3 +11,4 @@ raylib-bindings = { version = "0.3.1", git = "https://codeberg.org/davawen/rayli
 anyhow = "1.0.86"
 indexmap = "2.5.0"
 smallvec = "1.13.2"
+fontdue = "0.8.0"

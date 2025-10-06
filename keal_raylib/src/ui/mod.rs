@@ -105,19 +105,18 @@ struct Entries {
     list: Vec<OwnedEntry>,
     /// info for entry.name and entry.comment (optional)
     wrap_info: Vec<(WrapInfo, Option<WrapInfo>)>,
-    total_height: f32
+    total_height: f32,
+    calculated: bool
 }
 
 impl Entries {
-    fn new(list: Vec<OwnedEntry>, rl: &mut Raylib, atlas: &TTFCache) -> Self {
-        let mut this = Self {
+    fn new(list: Vec<OwnedEntry>) -> Self {
+        Self {
             list,
             wrap_info: Vec::new(),
-            total_height: 0.0
-        };
-
-        this.recalculate(rl, atlas);
-        this
+            total_height: 0.0,
+            calculated: false
+        }
     }
 
     /// call this when the screen width changes
@@ -141,6 +140,8 @@ impl Entries {
 
             (name, comment)
         }));
+
+        self.calculated = true;
     }
 }
 
@@ -159,7 +160,7 @@ pub struct Keal {
 
     // -- Data state --
     icons: IconCache,
-    font: TrueTypeFontCache,
+    font: Option<TrueTypeFontCache>,
 
     entries: Entries,
     manager: AsyncManager,
@@ -168,19 +169,19 @@ pub struct Keal {
     message_rec: Receiver<Message>
 }
 
-#[derive(Debug, Clone)]
 pub enum Message {
     // UI events
     Launch(Option<Label>),
 
     // Worker events
     IconCacheLoaded(IconCache),
+    FontLoaded(TrueTypeFont),
     Entries(Vec<OwnedEntry>),
     Action(Action)
 }
 
 impl Keal {
-    pub fn new(font: TrueTypeFontCache) -> Self {
+    pub fn new() -> Self {
         log_time("initializing app");
 
         let config = config();
@@ -188,7 +189,18 @@ impl Keal {
         let (message_sender, message_rec) = channel();
 
         {
+            let message_sender_ = message_sender.clone();
+
+            std::thread::spawn(move || {
+                log_time("initializing font");
+
+                let iosevka = include_bytes!("../../../public/iosevka-regular.ttf");
+                let font = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
+                message_sender_.send(Message::FontLoaded(font)).unwrap();
+            });
+
             let message_sender = message_sender.clone();
+
             std::thread::spawn(move || {
                 let icon_cache = IconCache::new(&config.icon_theme);
                 let _ = message_sender.send(Message::IconCacheLoaded(icon_cache));
@@ -207,7 +219,7 @@ impl Keal {
             old_screen_width: 0.0,
             rendered_icons: Default::default(),
             icons: Default::default(),
-            font,
+            font: None,
             entries: Default::default(),
             manager,
             message_sender,
@@ -219,7 +231,7 @@ impl Keal {
         let entries = &self.entries;
         let config = config();
 
-        let font = &self.font;
+        let Some(font) = &self.font else { return };
         let font_size = config.font_size;
 
         let data = &mut *self.manager.get_data();
@@ -326,9 +338,11 @@ impl Keal {
     }
 
     pub fn update(&mut self, rl: &mut Raylib) {
-        if self.old_screen_width != get_screen_width(rl) {
-            self.entries.recalculate(rl, &self.font);
-            self.old_screen_width = get_screen_width(rl);
+        if let Some(font) = &self.font {
+            if self.entries.calculated == false || self.old_screen_width != get_screen_width(rl) {
+                self.entries.recalculate(rl, font);
+                self.old_screen_width = get_screen_width(rl);
+            }
         }
 
         if let Some(hovered_choice) = self.hovered_choice {
@@ -392,7 +406,8 @@ impl Keal {
                     self.manager.send(async_manager::Event::Launch(selected));
                 }
                 Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
-                Message::Entries(entries) => self.entries = Entries::new(entries, rl, &self.font),
+                Message::FontLoaded(font) => self.font = Some(load_font_ex(rl, font, FontParams::default())),
+                Message::Entries(entries) => self.entries = Entries::new(entries),
                 Message::Action(action) => return self.handle_action(rl, action),
             };
         }

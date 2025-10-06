@@ -7,6 +7,8 @@ use raylib::prelude::*;
 mod ui;
 mod config;
 
+
+
 fn main() -> anyhow::Result<()> {
     start_log_time();
     match Arguments::init() {
@@ -29,14 +31,9 @@ fn main() -> anyhow::Result<()> {
     let mut rl = &mut init_window(1920/3, 1080/2, "Keal", 60);
     set_window_state(rl, WindowFlags::UNDECORATED | WindowFlags::RESIZABLE);
 
-    log_time("initilizing font");
-
-    let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
-    let iosevka = load_font_bytes(rl, &iosevka[..]);
-
     log_time("initializing keal");
 
-    let mut keal = Keal::new(iosevka);
+    let mut keal = Keal::new();
 
     log_time("entering drawing loop");
 
