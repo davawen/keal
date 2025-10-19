@@ -1,6 +1,9 @@
-use std::process;
+use std::sync::Arc;
+use std::{process, sync::mpsc};
 
 use crate::{ icon::IconPath, config::Config };
+use entry::{Label, OwnedEntry};
+use fork::{fork, Fork};
 use indexmap::IndexMap;
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
@@ -10,19 +13,20 @@ mod manager;
 mod usage;
 
 use self::entry::Entry;
-pub use self::manager::{PluginManager, PluginIndex};
+use self::manager::{PluginManager, PluginIndex};
 
-pub type PluginGenerator = Box<dyn Fn(&Plugin, &PluginManager) -> Box<dyn PluginExecution> + Send>;
-pub struct Plugin {
+type PluginGenerator = Box<dyn Fn(&Plugin, &PluginManager) -> Box<dyn PluginExecution> + Send>;
+
+struct Plugin {
     pub name: String,
     pub icon: Option<IconPath>,
     pub comment: Option<String>,
     pub prefix: String,
     pub config: IndexMap<String, String>,
-    pub generator: PluginGenerator
+    generator: PluginGenerator
 }
 
-pub trait PluginExecution: Send {
+trait PluginExecution: Send {
     /// The plugin is done executing
     fn finished(&mut self) -> bool;
     /// Wait for the plugin to finish executing
@@ -35,23 +39,6 @@ pub trait PluginExecution: Send {
 
     /// temporary fix for usage frequency: get the name of an entry
     fn get_name(&self, index: usize) -> &str;
-}
-
-#[must_use]
-#[derive(Default, Debug, Clone)]
-pub enum Action {
-    #[default]
-    None,
-    // Universal
-    ChangeInput(String),
-    ChangeQuery(String),
-    // Desktop file related
-    Exec(ClonableCommand),
-    // Dmenu related
-    PrintAndClose(String),
-    // Plugin related
-    Fork,
-    WaitAndClose
 }
 
 #[derive(Debug)]
@@ -74,4 +61,98 @@ impl Clone for ClonableCommand {
 
         c.into()
     }
+}
+
+#[must_use]
+#[derive(Default, Debug, Clone)]
+pub enum Action {
+    #[default]
+    None,
+    // Universal
+    ChangeInput(String),
+    ChangeQuery(String),
+    // Desktop file related
+    Exec(ClonableCommand),
+    // Dmenu related
+    PrintAndClose(String),
+    // Plugin related
+    Fork,
+    WaitAndClose
+}
+
+pub enum FrontendAction {
+    UpdateEntries(Vec<OwnedEntry>),
+    ChangeInput(String),
+    Exec(ClonableCommand),
+    Close
+}
+
+pub enum FrontendEvent {
+    UpdateInput { input: String, from_user: bool },
+    Launch(Option<Label>)
+}
+
+/// Launch the keal plugin manager on another thread,
+/// and create the necessary communication bits
+pub fn init(num_entries: usize, sort_by_usage: bool) -> (mpsc::Sender<FrontendEvent>, mpsc::Receiver<FrontendAction>) {
+    let (event_sx, event_rx) = mpsc::channel();
+    let (action_sx, action_rx) = mpsc::channel();
+
+    std::thread::spawn(move || {
+        let (event_rx, action_sx) = (event_rx, action_sx);
+        let mut manager = PluginManager::default();
+        manager.load_plugins();
+
+        let mut query = String::new();
+        let mut matcher = Matcher::default();
+        let mut pattern = Pattern::default();
+
+        let send_action_to_frontend = |action: Action, manager: &PluginManager| {
+            let action = match action {
+                Action::None => return,
+                Action::ChangeInput(input) => FrontendAction::ChangeInput(input),
+                Action::ChangeQuery(query) => {
+                    let input = manager.current().map(|plugin| format!("{} {}", plugin.prefix, query)).unwrap_or(query);
+                    FrontendAction::ChangeInput(input)
+                }
+                Action::Exec(command) => FrontendAction::Exec(command),
+                Action::Fork => match fork().expect("failed to fork") {
+                    Fork::Parent(_) => FrontendAction::Close,
+                    Fork::Child => return
+                },
+                Action::PrintAndClose(message) => {
+                    println!("{message}");
+                    FrontendAction::Close
+                }
+                Action::WaitAndClose => FrontendAction::Close,
+            };
+            let _ = action_sx.send(action);
+        };
+
+        loop {
+            let event = match event_rx.recv() {
+                Ok(event) => event,
+                Err(_) => break,
+            };
+            
+            match event {
+                FrontendEvent::UpdateInput { input, from_user } => {
+                    let (new_query, action) = manager.update_input(&input, from_user);
+                    query = new_query;
+                    pattern.reparse(&query, nucleo_matcher::pattern::CaseMatching::Ignore);
+
+                    let entries = manager.get_entries(&mut matcher, &pattern, num_entries, sort_by_usage);
+
+                    let _ = action_sx.send(FrontendAction::UpdateEntries(entries));
+                    send_action_to_frontend(action, &manager);
+                }
+                FrontendEvent::Launch(label) => {
+                    let action = manager.launch(&query, label);
+                    send_action_to_frontend(action, &manager);
+                }
+            }
+        }
+    });
+
+    (event_sx, action_rx)
 }

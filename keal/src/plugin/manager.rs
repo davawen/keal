@@ -5,6 +5,7 @@ use crate::{config::config, arguments::arguments, icon::IconPath, xdg_utils::con
 
 use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin, session_manager::SessionPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
 
+/// An index into `PluginManager.plugins`
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PluginIndex(usize);
 
@@ -15,7 +16,6 @@ pub struct PluginManager {
     /// plugins selected by default by the user that will show when no plugin prefix is typed
     default_plugins: Vec<(PluginIndex, Box<dyn PluginExecution>)>,
     /// if the user has typed a plugin prefix, then this will be the only plugin shown
-    /// usize is an index into `self.plugins`
     current: Option<(PluginIndex, Box<dyn PluginExecution>)>,
     /// how frequently different plugin entries are used
     usage: Usage
