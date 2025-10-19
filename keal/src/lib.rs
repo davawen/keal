@@ -1,4 +1,4 @@
-use std::sync::{mpsc, OnceLock};
+use std::sync::OnceLock;
 
 use arguments::arguments;
 

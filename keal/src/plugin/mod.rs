@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::{process, sync::mpsc};
 
 use crate::{ icon::IconPath, config::Config };
@@ -7,7 +6,7 @@ use fork::{fork, Fork};
 use indexmap::IndexMap;
 use nucleo_matcher::{Matcher, pattern::Pattern};
 
-pub mod builtin;
+mod builtin;
 pub mod entry;
 mod manager;
 mod usage;
@@ -65,7 +64,7 @@ impl Clone for ClonableCommand {
 
 #[must_use]
 #[derive(Default, Debug, Clone)]
-pub enum Action {
+enum Action {
     #[default]
     None,
     // Universal
@@ -80,13 +79,14 @@ pub enum Action {
     WaitAndClose
 }
 
+#[derive(Debug, Clone)]
 pub enum FrontendAction {
-    UpdateEntries(Vec<OwnedEntry>),
+    UpdateEntries { entries: Vec<OwnedEntry>, query: String },
     ChangeInput(String),
-    Exec(ClonableCommand),
     Close
 }
 
+#[derive(Debug, Clone)]
 pub enum FrontendEvent {
     UpdateInput { input: String, from_user: bool },
     Launch(Option<Label>)
@@ -107,15 +107,22 @@ pub fn init(num_entries: usize, sort_by_usage: bool) -> (mpsc::Sender<FrontendEv
         let mut matcher = Matcher::default();
         let mut pattern = Pattern::default();
 
-        let send_action_to_frontend = |action: Action, manager: &PluginManager| {
+        let send_action_to_frontend = |action: Action, manager: &mut PluginManager| {
             let action = match action {
                 Action::None => return,
-                Action::ChangeInput(input) => FrontendAction::ChangeInput(input),
+                Action::ChangeInput(input) => {
+                    manager.kill();
+                    FrontendAction::ChangeInput(input)
+                },
                 Action::ChangeQuery(query) => {
                     let input = manager.current().map(|plugin| format!("{} {}", plugin.prefix, query)).unwrap_or(query);
                     FrontendAction::ChangeInput(input)
                 }
-                Action::Exec(command) => FrontendAction::Exec(command),
+                Action::Exec(mut command) => {
+                    use std::os::unix::process::CommandExt;
+                    let _ = command.0.exec();
+                    FrontendAction::Close
+                }
                 Action::Fork => match fork().expect("failed to fork") {
                     Fork::Parent(_) => FrontendAction::Close,
                     Fork::Child => return
@@ -124,7 +131,10 @@ pub fn init(num_entries: usize, sort_by_usage: bool) -> (mpsc::Sender<FrontendEv
                     println!("{message}");
                     FrontendAction::Close
                 }
-                Action::WaitAndClose => FrontendAction::Close,
+                Action::WaitAndClose => {
+                    manager.wait();
+                    FrontendAction::Close
+                }
             };
             let _ = action_sx.send(action);
         };
@@ -134,7 +144,7 @@ pub fn init(num_entries: usize, sort_by_usage: bool) -> (mpsc::Sender<FrontendEv
                 Ok(event) => event,
                 Err(_) => break,
             };
-            
+
             match event {
                 FrontendEvent::UpdateInput { input, from_user } => {
                     let (new_query, action) = manager.update_input(&input, from_user);
@@ -143,12 +153,12 @@ pub fn init(num_entries: usize, sort_by_usage: bool) -> (mpsc::Sender<FrontendEv
 
                     let entries = manager.get_entries(&mut matcher, &pattern, num_entries, sort_by_usage);
 
-                    let _ = action_sx.send(FrontendAction::UpdateEntries(entries));
-                    send_action_to_frontend(action, &manager);
+                    let _ = action_sx.send(FrontendAction::UpdateEntries { entries, query: query.clone() });
+                    send_action_to_frontend(action, &mut manager);
                 }
                 FrontendEvent::Launch(label) => {
                     let action = manager.launch(&query, label);
-                    send_action_to_frontend(action, &manager);
+                    send_action_to_frontend(action, &mut manager);
                 }
             }
         }
