@@ -671,12 +671,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cov-mark"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ffa3d3e0138386cd4361f63537765cac7ee40698028844635a54495a92f67f3"
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1113,15 +1107,6 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
-
-[[package]]
-name = "fork"
-version = "0.1.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60e74d3423998a57e9d906e49252fb79eb4a04d5cdfe188fb1b7ff9fc076a8ed"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "fork"
@@ -1743,11 +1728,11 @@ dependencies = [
 
 [[package]]
 name = "keal"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
- "fork 0.3.0",
+ "fork",
  "indexmap",
  "nucleo-matcher",
  "serde",
@@ -1757,15 +1742,13 @@ dependencies = [
 
 [[package]]
 name = "keal_iced"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
- "fork 0.1.23",
  "iced",
  "indexmap",
  "keal",
- "nucleo-matcher",
 ]
 
 [[package]]
@@ -2026,11 +2009,10 @@ dependencies = [
 
 [[package]]
 name = "nucleo-matcher"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b702b402fe286162d1f00b552a046ce74365d2ac473a2607ff36ba650f9bd57"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
 dependencies = [
- "cov-mark",
  "memchr",
  "unicode-segmentation",
 ]

@@ -1,15 +1,11 @@
 use iced::{keyboard::{self, key::{Key, Named}, Modifiers}, widget::{button, column as icolumn, container, image, row as irow, scrollable, svg, text, text_input, Space}, Element, Length, Padding, Subscription, Task};
-use nucleo_matcher::{pattern::{CaseMatching, Pattern}, Matcher};
 
-use keal::{config::config, icon::{Icon, IconCache}, log_time, plugin::{entry::{Label, OwnedEntry}, FrontendAction, FrontendEvent}};
+use keal::{config::config, icon::{Icon, IconCache}, log_time, plugin::{entry::{Label, DisplayEntry}, FrontendAction, FrontendEvent}};
 
 pub use crate::config::Theme;
 use styled::{ButtonStyle, TextStyle};
 
-use self::match_span::MatchSpan;
-
 mod styled;
-mod match_span;
 // mod async_manager;
 
 pub struct Keal {
@@ -23,8 +19,7 @@ pub struct Keal {
     // data state
     icons: IconCache,
 
-    entries: Vec<OwnedEntry>,
-    pattern: Pattern,
+    entries: Vec<DisplayEntry>,
     sender: Option<std::sync::mpsc::Sender<FrontendEvent>>,
 
     first_event: bool
@@ -96,7 +91,6 @@ impl Keal {
             selected: 0,
             icons: IconCache::default(),
             entries: Vec::new(),
-            pattern: Pattern::default(),
             sender: None,
             first_event: false
         }, command)
@@ -124,9 +118,6 @@ impl Keal {
         let input = container(input)
             .width(Length::Fill);
 
-        let mut matcher = Matcher::default();
-        let mut buf = vec![];
-
         let entries = scrollable(icolumn({
             entries.iter().enumerate().map(|(index, entry)| {
                 let selected = self.selected == index;
@@ -143,7 +134,7 @@ impl Keal {
                     }
                 }
 
-                for (span, highlighted) in MatchSpan::new(&entry.name, &mut matcher, &self.pattern, &mut buf) {
+                for (span, highlighted) in entry.name.iter() {
                     item = item.push(text(span).size(config.font_size).shaping(self.theme.text_shaping).class(
                         match highlighted {
                             false => TextStyle::Normal,
@@ -156,7 +147,7 @@ impl Keal {
                 if let Some(comment) = &entry.comment {
                     item = item.push(Space::with_width(5.0)); // minimum amount of space between name and comment
                     item = item.push(
-                        text(comment)
+                        text(comment.source())
                             .size(config.font_size)
                             .shaping(self.theme.text_shaping)
                             .class(TextStyle::Comment)
@@ -226,10 +217,7 @@ impl Keal {
 
     fn handle_action(&mut self, action: FrontendAction) -> Task<Message> {
         match action {
-            FrontendAction::UpdateEntries { entries, query } => {
-                self.entries = entries;
-                self.pattern.reparse(&query, CaseMatching::Ignore);
-            }
+            FrontendAction::UpdateEntries { entries, query: _ } => self.entries = entries,
             FrontendAction::ChangeInput(new) => {
                 self.update_input(new, false);
                 return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
