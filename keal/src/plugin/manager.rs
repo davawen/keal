@@ -3,7 +3,7 @@ use nucleo_matcher::{Matcher, pattern::Pattern};
 
 use crate::{config::config, arguments::arguments, icon::IconPath, xdg_utils::config_dir, log_time};
 
-use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin, session_manager::SessionPlugin}, Action, usage::Usage, entry::{Label, OwnedEntry}};
+use super::{Plugin, PluginExecution, builtin::{user::get_user_plugins, application::ApplicationPlugin, list::ListPlugin, session_manager::SessionPlugin}, Action, usage::Usage, entry::{Label, DisplayEntry}};
 
 /// An index into `PluginManager.plugins`
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -110,7 +110,7 @@ impl PluginManager {
         self.plugins.iter()
     }
 
-    pub fn get_entries(&self, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_usage: bool) -> Vec<OwnedEntry> {
+    pub fn get_entries(&self, matcher: &mut Matcher, pattern: &Pattern, n: usize, sort_by_usage: bool) -> Vec<DisplayEntry> {
         let config = config();
 
         let mut entries = vec![];
@@ -138,9 +138,9 @@ impl PluginManager {
 
         entries.truncate(n);
 
-        // this clones the value of only the top keys, which should incur pretty minimal performance loss
-        // in response, it allows putting plugins in an async future, which is a much bigger win than a few avoided clones
-        entries.into_iter().map(|e| e.to_owned()).collect()
+        let mut charbuf = vec![];
+
+        entries.into_iter().map(|e| e.to_display(pattern, matcher, &mut charbuf)).collect()
     }
 
     /// Changes the input field to a new value

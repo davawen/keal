@@ -1,7 +1,7 @@
 use std::{process, sync::mpsc};
 
 use crate::{ icon::IconPath, config::Config };
-use entry::{Label, OwnedEntry};
+use entry::{Label, DisplayEntry};
 use fork::{fork, Fork};
 use indexmap::IndexMap;
 use nucleo_matcher::{Matcher, pattern::Pattern};
@@ -81,7 +81,7 @@ enum Action {
 
 #[derive(Debug, Clone)]
 pub enum FrontendAction {
-    UpdateEntries { entries: Vec<OwnedEntry>, query: String },
+    UpdateEntries { entries: Vec<DisplayEntry>, query: String },
     ChangeInput(String),
     Close
 }
@@ -149,7 +149,7 @@ pub fn init(num_entries: usize, sort_by_usage: bool) -> (mpsc::Sender<FrontendEv
                 FrontendEvent::UpdateInput { input, from_user } => {
                     let (new_query, action) = manager.update_input(&input, from_user);
                     query = new_query;
-                    pattern.reparse(&query, nucleo_matcher::pattern::CaseMatching::Ignore);
+                    pattern.reparse(&query, nucleo_matcher::pattern::CaseMatching::Ignore, nucleo_matcher::pattern::Normalization::Smart);
 
                     let entries = manager.get_entries(&mut matcher, &pattern, num_entries, sort_by_usage);
 
