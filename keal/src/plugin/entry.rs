@@ -94,9 +94,13 @@ impl HighlightedString {
     }
 
     pub fn source(&self) -> &str { &self.source }
+    
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a str, bool)> + use<'a> {
+        self.iter_indices().map(|((a, b), highlighted)| (&self.source[a..b], highlighted))
+    }
 
     /// Iterate on the highlighted and non highlighted spans
-    pub fn iter(&self) -> MatchSpanIterator<'_> {
+    pub fn iter_indices(&self) -> MatchSpanIterator<'_> {
         let mut chars = self.source.char_indices();
         chars.next(); // advance char iterator to match the state of MatchSpan
 
@@ -123,7 +127,7 @@ pub struct MatchSpanIterator<'a> {
 }
 
 impl<'a> Iterator for MatchSpanIterator<'a> {
-    type Item = (&'a str, bool);
+    type Item = ((usize, usize), bool);
 
     fn next(&mut self) -> Option<Self::Item> {
         let start = self.byte_offset;
@@ -140,7 +144,7 @@ impl<'a> Iterator for MatchSpanIterator<'a> {
             } else if !self.item[start..].is_empty() {
                 self.index += 1;
                 self.byte_offset = self.item.len();
-                return Some((&self.item[start..], match_state));
+                return Some(((start, self.item.len()), match_state));
             } else {
                 // stop when we don't have any characters left
                 return None;
@@ -150,7 +154,7 @@ impl<'a> Iterator for MatchSpanIterator<'a> {
             if match_state { self.matched_index += 1 }
         }
 
-        Some((&self.item[start..self.byte_offset], match_state))
+        Some(((start, self.byte_offset), match_state))
     }
 }
 
