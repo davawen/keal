@@ -385,12 +385,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cov-mark"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ffa3d3e0138386cd4361f63537765cac7ee40698028844635a54495a92f67f3"
-
-[[package]]
 name = "crc32fast"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,15 +610,6 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "fork"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05dc8b302e04a1c27f4fe694439ef0f29779ca4edc205b7b58f00db04e29656d"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "fork"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23160f7290eca8e33815b13c74dac808ee2518fb99422718bcceec5755a05356"
@@ -750,11 +735,11 @@ dependencies = [
 
 [[package]]
 name = "keal"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
- "fork 0.3.0",
+ "fork",
  "indexmap",
  "nucleo-matcher",
  "serde",
@@ -768,9 +753,7 @@ version = "0.1.0"
 dependencies = [
  "copypasta",
  "cosmic-text",
- "fork 0.2.0",
  "keal",
- "nucleo-matcher",
  "piet-tiny-skia",
  "resvg",
  "smallvec",
@@ -941,11 +924,10 @@ dependencies = [
 
 [[package]]
 name = "nucleo-matcher"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b702b402fe286162d1f00b552a046ce74365d2ac473a2607ff36ba650f9bd57"
+checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
 dependencies = [
- "cov-mark",
  "memchr",
  "unicode-segmentation",
 ]
