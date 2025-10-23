@@ -22,6 +22,15 @@ fn main() -> anyhow::Result<()> {
     let mut theme = config::Theme::default();
     let _config = keal::config::Config::init(&mut theme);
 
+    let font_loader = std::thread::spawn(|| {
+        log_time("loading font");
+        let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
+        let iosevka = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
+        log_time("finished loading font");
+
+        iosevka
+    });
+
     log_time("initializing window");
 
     set_trace_log_level(TraceLogLevel::Fatal);
@@ -29,13 +38,8 @@ fn main() -> anyhow::Result<()> {
     let mut rl = &mut init_window(1920/3, 1080/2, "Keal", 60);
     set_window_state(rl, WindowFlags::UNDECORATED | WindowFlags::RESIZABLE);
 
-    log_time("initializing font");
-
-    let iosevka = include_bytes!("../../public/iosevka-regular.ttf");
-
-    let iosevka = load_font_bytes(rl, &iosevka[..]);
-
     log_time("initializing keal");
+    let iosevka = load_font_ex(rl, font_loader.join().unwrap(), FontParams::default());
     let mut keal = Keal::new(iosevka);
 
     log_time("entering drawing loop");
