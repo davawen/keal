@@ -1,18 +1,11 @@
-use std::{os::unix::process::CommandExt, sync::mpsc::{channel, Receiver, Sender, TryRecvError}};
+use std::{sync::{mpsc::{Receiver, Sender, TryRecvError}, Arc, OnceLock}};
 
-use fork::{fork, Fork};
 use raylib::prelude::*;
-use nucleo_matcher::Matcher;
 use smallvec::SmallVec;
 
-use keal::{config::config, icon::{Icon, IconCache, IconPath}, log_time, plugin::{entry::{Label, OwnedEntry}, Action}};
+use keal::{config::config, icon::{Icon, IconCache, IconPath}, log_time, plugin::{entry::DisplayEntry, FrontendAction, FrontendEvent}};
 use text_input::TextInput;
 use crate::config::Theme;
-
-use self::{match_span::MatchSpan, async_manager::AsyncManager};
-
-mod match_span;
-mod async_manager;
 
 mod text_input;
 
@@ -102,7 +95,7 @@ struct WrapInfo {
 
 #[derive(Default)]
 struct Entries {
-    list: Vec<OwnedEntry>,
+    list: Vec<DisplayEntry>,
     /// info for entry.name and entry.comment (optional)
     wrap_info: Vec<(WrapInfo, Option<WrapInfo>)>,
     total_height: f32,
@@ -110,8 +103,8 @@ struct Entries {
 }
 
 impl Entries {
-    fn new(list: Vec<OwnedEntry>) -> Self {
-        Self {
+    fn new(list: Vec<DisplayEntry>, rl: &mut Raylib, atlas: &TTFCache) -> Self {
+        let mut this = Self {
             list,
             wrap_info: Vec::new(),
             total_height: 0.0,
@@ -128,12 +121,12 @@ impl Entries {
         self.wrap_info.extend(self.list.iter().map(|entry| {
             let icon_width = entry.icon.as_ref().map(|_| config.font_size + 4.0).unwrap_or_default();
 
-            let name = measure_text_wrap(&entry.name, get_screen_width(rl)/2.0 - icon_width, font, config.font_size, 5.0);
+            let name = measure_text_wrap(&entry.name.source(), get_screen_width(rl)/2.0 - icon_width, font, config.font_size, 5.0);
             let mut max_height = name.height;
 
             let comment_width = get_screen_width(rl) - name.width - icon_width - 10.0 - 20.0 - 10.0; // this removes: name left padding, name-comment inner padding, comment right padding
             let comment = entry.comment.as_ref()
-                .map(|comment| measure_text_wrap(comment, comment_width, font, config.font_size, 5.0))
+                .map(|comment| measure_text_wrap(comment.source(), comment_width, font, config.font_size, 5.0))
                 .inspect(|comment| max_height = max_height.max(comment.height));
 
             self.total_height += max_height + 20.0;
@@ -159,25 +152,13 @@ pub struct Keal {
     rendered_icons: std::collections::HashMap<IconPath, Option<Texture>>,
 
     // -- Data state --
-    icons: IconCache,
-    font: Option<TrueTypeFontCache>,
+    icons: Arc<OnceLock<IconCache>>,
+    font: TrueTypeFontCache,
 
     entries: Entries,
-    manager: AsyncManager,
 
-    message_sender: Sender<Message>,
-    message_rec: Receiver<Message>
-}
-
-pub enum Message {
-    // UI events
-    Launch(Option<Label>),
-
-    // Worker events
-    IconCacheLoaded(IconCache),
-    FontLoaded(TrueTypeFont),
-    Entries(Vec<OwnedEntry>),
-    Action(Action)
+    action_rec: Receiver<FrontendAction>,
+    event_sender: Sender<FrontendEvent>
 }
 
 impl Keal {
@@ -186,28 +167,17 @@ impl Keal {
 
         let config = config();
 
-        let (message_sender, message_rec) = channel();
+        let icons = Arc::new(OnceLock::new());
 
         {
-            let message_sender_ = message_sender.clone();
-
-            std::thread::spawn(move || {
-                log_time("initializing font");
-
-                let iosevka = include_bytes!("../../../public/iosevka-regular.ttf");
-                let font = TrueTypeFont::from_bytes(&iosevka[..]).unwrap();
-                message_sender_.send(Message::FontLoaded(font)).unwrap();
-            });
-
-            let message_sender = message_sender.clone();
-
+            let icons = icons.clone();
             std::thread::spawn(move || {
                 let icon_cache = IconCache::new(&config.icon_theme);
-                let _ = message_sender.send(Message::IconCacheLoaded(icon_cache));
+                icons.set(icon_cache).expect("Nothing should have set icon cache before this");
             });
         }
 
-        let manager = AsyncManager::new(Matcher::default(), 50, true, message_sender.clone());
+        let (event_sender, action_rec) = keal::plugin::init(50, true);
 
         log_time("finished initializing");
 
@@ -218,12 +188,11 @@ impl Keal {
             hovered_choice: None,
             old_screen_width: 0.0,
             rendered_icons: Default::default(),
-            icons: Default::default(),
-            font: None,
+            icons,
+            font,
             entries: Default::default(),
-            manager,
-            message_sender,
-            message_rec
+            event_sender,
+            action_rec
         }
     }
 
@@ -233,9 +202,6 @@ impl Keal {
 
         let Some(font) = &self.font else { return };
         let font_size = config.font_size;
-
-        let data = &mut *self.manager.get_data();
-        let mut buf = vec![];
 
         // TODO: scrollbar
 
@@ -277,7 +243,7 @@ impl Keal {
                         draw_texture_ex(rl, rendered, vec2(icon_offset, offset_y + 10.0), 0.0, config.font_size / rendered.width() as f32, Color::WHITE);
                         icon_offset += config.font_size + 4.0;
                     }
-                } else if let Some(icon) = self.icons.get(icon_path) {
+                } else if let Some(icon_cache) = self.icons.get() && let Some(icon) = icon_cache.get(icon_path) {
                     match icon {
                         Icon::Svg(path) | Icon::Other(path) => {
                             let img = Texture::load(rl, path).unwrap_or_else(|e| {
@@ -295,10 +261,16 @@ impl Keal {
             let mut name_offset_y = offset_y + 10.0;
 
             for &line_end in &wrap_info.0.splits {
-                let text = &entry.name[line_start..line_end];
-
                 let mut offset = icon_offset;
-                for (span, highlighted) in MatchSpan::new(text, &mut data.matcher, &data.pattern, &mut buf) {
+                for ((a, b), highlighted) in entry.name.iter_indices() {
+                    if b < line_start { continue }
+                    if a > line_end { break }
+
+                    let a = a.clamp(line_start, line_end);
+                    let b = b.clamp(line_start, line_end);
+
+                    let span = &entry.name.source()[a..b];
+
                     let color = match highlighted {
                         false => theme.text,
                         true => match selected {
@@ -323,7 +295,7 @@ impl Keal {
 
                 let mut line_start = 0;
                 for &line_end in &wrap_info.splits {
-                    let text = &comment[line_start..line_end];
+                    let text = &comment.source()[line_start..line_end];
 
                     draw_text(rl, font, text, vec2(get_screen_width(rl) - wrap_info.width - 10.0, comment_offset_y), font_size, theme.comment);
                     comment_offset_y += config.font_size + 5.0;
@@ -349,7 +321,8 @@ impl Keal {
             set_mouse_cursor(rl, MouseCursor::PointingHand);
 
             if is_mouse_button_pressed(rl, MouseButton::Left) {
-                self.message_sender.send(Message::Launch(Some(self.entries.list[hovered_choice].label))).expect("message reciever destroyed");
+                let selected = Some(self.entries.list[hovered_choice].label);
+                let _ = self.event_sender.send(FrontendEvent::Launch(selected));
             }
         } 
 
@@ -358,7 +331,8 @@ impl Keal {
         }
 
         if is_key_pressed(rl, Key::Enter) {
-            let _ = self.message_sender.send(Message::Launch(Some(self.entries.list[self.selected].label)));
+            let selected = self.entries.list.get(self.selected).map(|x| x.label);
+            let _ = self.event_sender.send(FrontendEvent::Launch(selected));
         }
 
         if is_key_pressed(rl, Key::Escape) { quit(rl); }
@@ -395,21 +369,11 @@ impl Keal {
         }
 
         loop {
-            let message = match self.message_rec.try_recv() {
-                Ok(message) => message,
+            match self.action_rec.try_recv() {
+                Ok(action) => self.handle_action(rl, action),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => panic!("manager channel disconnected")
-            };
-
-            match message {
-                Message::Launch(selected) => {
-                    self.manager.send(async_manager::Event::Launch(selected));
-                }
-                Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
-                Message::FontLoaded(font) => self.font = Some(load_font_ex(rl, font, FontParams::default())),
-                Message::Entries(entries) => self.entries = Entries::new(entries),
-                Message::Action(action) => return self.handle_action(rl, action),
-            };
+            }
         }
     }
 }
@@ -417,42 +381,19 @@ impl Keal {
 impl Keal {
     pub fn update_input(&mut self, from_user: bool) {
         self.input.update_input(from_user);
-
-        self.manager.send(async_manager::Event::UpdateInput(self.input.text.clone(), from_user));
+        let _ = self.event_sender.send(FrontendEvent::UpdateInput { input: self.input.text.clone(), from_user });
     }
 
-    fn handle_action(&mut self, rl: &mut Raylib, action: Action) /* -> Command<Message> */ {
+    fn handle_action(&mut self, rl: &mut Raylib, action: FrontendAction) /* -> Command<Message> */ {
         match action {
-            Action::None => (),
-            Action::ChangeInput(new) => {
-                self.manager.with_manager(|m| m.kill());
-                self.input.text = new;
-                self.update_input(false);
-                // return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
-            }
-            Action::ChangeQuery(new) => {
-                let new = self.manager.use_manager(|m| m.current().map(
-                    |plugin| format!("{} {}", plugin.prefix, new) 
-                )).unwrap_or(new);
+            FrontendAction::ChangeInput(new) => {
                 self.input.text = new;
                 self.update_input(false);
             }
-            Action::Exec(mut command) => {
-                let _ = command.0.exec();
-                quit(rl);
+            FrontendAction::UpdateEntries { entries, query: _ } => {
+                self.entries = Entries::new(entries, rl, &self.font);
             }
-            Action::PrintAndClose(message) => {
-                println!("{message}");
-                quit(rl);
-            }
-            Action::Fork => match fork().expect("failed to fork") {
-                Fork::Parent(_) => quit(rl),
-                Fork::Child => ()
-            }
-            Action::WaitAndClose => {
-                self.manager.with_manager(|m| m.wait());
-                quit(rl);
-            }
+            FrontendAction::Close => quit(rl)
         }
     }
 }

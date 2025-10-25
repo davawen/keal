@@ -1,19 +1,12 @@
-use std::os::unix::process::CommandExt;
+use iced::{keyboard::{self, key::{Key, Named}, Modifiers}, widget::{button, column as icolumn, container, image, row as irow, scrollable, svg, text, text_input, Space}, Element, Length, Padding, Subscription, Task};
 
-use fork::{fork, Fork};
-use iced::{futures::channel::mpsc, keyboard::{self, key::{Key, Named}, Modifiers}, widget::{button, column as icolumn, container, image, row as irow, scrollable, svg, text, text_input, Space}, Element, Length, Padding, Subscription, Task};
-use nucleo_matcher::Matcher;
-
-use keal::{icon::{IconCache, Icon}, config::config, plugin::{Action, entry::{Label, OwnedEntry}}, log_time};
+use keal::{config::config, icon::{Icon, IconCache}, log_time, plugin::{entry::{Label, DisplayEntry}, FrontendAction, FrontendEvent}};
 
 pub use crate::config::Theme;
 use styled::{ButtonStyle, TextStyle};
 
-use self::{match_span::MatchSpan, async_manager::AsyncManager};
-
 mod styled;
-mod match_span;
-mod async_manager;
+// mod async_manager;
 
 pub struct Keal {
     // Global state
@@ -26,9 +19,8 @@ pub struct Keal {
     // data state
     icons: IconCache,
 
-    entries: Vec<OwnedEntry>,
-    manager: AsyncManager,
-    sender: Option<mpsc::Sender<async_manager::Event>>,
+    entries: Vec<DisplayEntry>,
+    sender: Option<std::sync::mpsc::Sender<FrontendEvent>>,
 
     first_event: bool
 }
@@ -42,15 +34,34 @@ pub enum Message {
 
     // Worker events
     IconCacheLoaded(IconCache),
-    SenderLoaded(mpsc::Sender<async_manager::Event>),
-    Entries(Vec<OwnedEntry>),
-    Action(Action),
+    SenderLoaded(std::sync::mpsc::Sender<FrontendEvent>),
+    Action(FrontendAction)
+}
+
+fn keal_subscription() -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(50, |mut output| async move {
+        use iced::futures::{sink::SinkExt, StreamExt};
+        let (sender, receiver) = keal::plugin::init(50, true);
+
+        output.send(Message::SenderLoaded(sender)).await.unwrap();
+
+        let (mut false_sender, mut false_recv) = iced::futures::channel::mpsc::channel(50);
+
+        std::thread::spawn(move || {
+            for action in receiver.iter() {
+                iced::futures::executor::block_on(false_sender.send(action)).unwrap();
+            }
+        });
+
+        loop {
+            let action = false_recv.select_next_some().await;
+            output.send(Message::Action(action)).await.unwrap();
+        }
+    })
 }
 
 fn close_main_window() -> Task<Message> {
-    iced::window::get_oldest().and_then(|id| {
-        iced::window::close(id)
-    })
+    iced::window::get_oldest().and_then(|id| { iced::window::close(id) })
 }
 
 impl Keal {
@@ -71,7 +82,6 @@ impl Keal {
         }, Message::IconCacheLoaded);
 
         let command = Task::batch(vec![focus, load_icons]);
-        let manager = AsyncManager::new(Matcher::default(), 50, true);
 
         log_time("finished initializing");
 
@@ -81,7 +91,6 @@ impl Keal {
             selected: 0,
             icons: IconCache::default(),
             entries: Vec::new(),
-            manager,
             sender: None,
             first_event: false
         }, command)
@@ -92,7 +101,7 @@ impl Keal {
             Some(Message::KeyPress(key, mods))
         });
 
-        let manager = Subscription::run_with_id("manager", self.manager.subscription());
+        let manager = Subscription::run_with_id("manager", keal_subscription());
         Subscription::batch([key_press, manager])
     }
 
@@ -108,9 +117,6 @@ impl Keal {
 
         let input = container(input)
             .width(Length::Fill);
-
-        let data = &mut *self.manager.get_data();
-        let mut buf = vec![];
 
         let entries = scrollable(icolumn({
             entries.iter().enumerate().map(|(index, entry)| {
@@ -128,7 +134,7 @@ impl Keal {
                     }
                 }
 
-                for (span, highlighted) in MatchSpan::new(&entry.name, &mut data.matcher, &data.pattern, &mut buf) {
+                for (span, highlighted) in entry.name.iter() {
                     item = item.push(text(span).size(config.font_size).shaping(self.theme.text_shaping).class(
                         match highlighted {
                             false => TextStyle::Normal,
@@ -141,7 +147,7 @@ impl Keal {
                 if let Some(comment) = &entry.comment {
                     item = item.push(Space::with_width(5.0)); // minimum amount of space between name and comment
                     item = item.push(
-                        text(comment)
+                        text(comment.source())
                             .size(config.font_size)
                             .shaping(self.theme.text_shaping)
                             .class(TextStyle::Comment)
@@ -186,11 +192,10 @@ impl Keal {
             Message::TextInput(input) => self.update_input(input, true),
             Message::Launch(selected) => {
                 if let Some(sender) = &mut self.sender {
-                    sender.try_send(async_manager::Event::Launch(selected)).expect("failed to send launch command");
+                    sender.send(FrontendEvent::Launch(selected)).expect("failed to send launch command");
                 }
             }
             Message::IconCacheLoaded(icon_cache) => self.icons = icon_cache,
-            Message::Entries(entries) => self.entries = entries,
             Message::SenderLoaded(sender) => {
                 self.sender = Some(sender);
                 self.update_input(self.input.clone(), true); // in case the user typed in before the manager was loaded
@@ -206,42 +211,18 @@ impl Keal {
     pub fn update_input(&mut self, input: String, from_user: bool) {
         self.input = input.clone();
         if let Some(sender) = &mut self.sender {
-            sender.try_send(async_manager::Event::UpdateInput(input, from_user)).expect("failed to send update input command");
+            sender.send(FrontendEvent::UpdateInput { input, from_user }).expect("failed to send update input command");
         }
     }
 
-    fn handle_action(&mut self, action: Action) -> Task<Message> {
+    fn handle_action(&mut self, action: FrontendAction) -> Task<Message> {
         match action {
-            Action::None => (),
-            Action::ChangeInput(new) => {
-                self.manager.with_manager(|m| m.kill());
+            FrontendAction::UpdateEntries { entries, query: _ } => self.entries = entries,
+            FrontendAction::ChangeInput(new) => {
                 self.update_input(new, false);
                 return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
             }
-            Action::ChangeQuery(new) => {
-                let new = self.manager.use_manager(|m| m.current().map(
-                    |plugin| format!("{} {}", plugin.prefix, new) 
-                )).unwrap_or(new);
-                self.update_input(new, false);
-
-                return text_input::move_cursor_to_end(text_input::Id::new("query_input"));
-            }
-            Action::Exec(mut command) => {
-                let _ = command.0.exec();
-                return close_main_window();
-            }
-            Action::PrintAndClose(message) => {
-                println!("{message}");
-                return close_main_window();
-            }
-            Action::Fork => match fork().expect("failed to fork") {
-                Fork::Parent(_) => return close_main_window(),
-                Fork::Child => ()
-            }
-            Action::WaitAndClose => {
-                self.manager.with_manager(|m| m.wait());
-                return close_main_window();
-            }
+            FrontendAction::Close => return close_main_window()
         }
 
         Task::none()

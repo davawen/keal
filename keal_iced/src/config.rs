@@ -3,7 +3,9 @@ use keal::{config::FrontendConfig, parse_fields};
 
 #[derive(Debug, Default, Clone)]
 pub struct Theme {
+    #[allow(unused)]
     pub font_weight: iced::font::Weight,
+    #[allow(unused)]
     pub font_stretch: iced::font::Stretch,
     pub text_shaping: text::Shaping,
 

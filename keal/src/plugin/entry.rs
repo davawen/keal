@@ -15,16 +15,6 @@ pub struct Entry<'a> {
     pub label: Label
 }
 
-#[derive(Debug, Clone)]
-pub struct OwnedEntry {
-    pub name: String,
-    pub icon: Option<IconPath>,
-    pub comment: Option<String>,
-    /// fuzzy matching score
-    pub score: u32,
-    pub label: Label
-}
-
 /// Specifies the origin of the entry
 #[derive(Debug, Clone, Copy)]
 pub struct Label {
@@ -62,14 +52,109 @@ impl<'a> Entry<'a> {
         }
     }
     
-    pub fn to_owned(&self) -> OwnedEntry {
-        OwnedEntry {
-            name: self.name.to_owned(),
+    pub fn to_display(&self, pattern: &Pattern, matcher: &mut Matcher, charbuf: &mut Vec<char>) -> DisplayEntry {
+        DisplayEntry {
+            name: HighlightedString::build(self.name.to_owned(), pattern, matcher, charbuf),
             icon: self.icon.cloned(),
-            comment: self.comment.map(str::to_owned),
+            comment: self.comment.map(|comment| HighlightedString::build(comment.to_owned(), pattern, matcher, charbuf)),
             score: self.score,
             label: self.label
         }
+    }
+}
+
+/// An entry with rich highlight information
+/// sent from the plugin manager to the frontend.
+#[derive(Debug, Clone)]
+pub struct DisplayEntry {
+    pub name: HighlightedString,
+    pub comment: Option<HighlightedString>,
+    pub icon: Option<IconPath>,
+    /// fuzzy matching score
+    pub score: u32,
+    pub label: Label
+}
+
+/// A string and information about which parts matchedagainst a pattern
+/// and which parts did not.
+#[derive(Debug, Clone)]
+pub struct HighlightedString {
+    source: String,
+    /// A list of byte indices indicating alternatively the spans that matched and didn't match
+    indices: Vec<u32>
+}
+
+impl HighlightedString {
+    fn build(source: String, pattern: &Pattern, matcher: &mut Matcher, charbuf: &mut Vec<char>) -> Self {
+        let mut indices = vec![];
+        pattern.indices(Utf32Str::new(&source, charbuf), matcher, &mut indices);
+        indices.sort_unstable();
+        indices.dedup();
+        Self { source, indices }
+    }
+
+    pub fn source(&self) -> &str { &self.source }
+    
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a str, bool)> + use<'a> {
+        self.iter_indices().map(|((a, b), highlighted)| (&self.source[a..b], highlighted))
+    }
+
+    /// Iterate on the highlighted and non highlighted spans
+    pub fn iter_indices(&self) -> MatchSpanIterator<'_> {
+        let mut chars = self.source.char_indices();
+        chars.next(); // advance char iterator to match the state of MatchSpan
+
+        MatchSpanIterator {
+            item: &self.source,
+            matched: &self.indices,
+            matched_index: 0,
+            byte_offset: 0,
+            index: 0,
+            chars
+        }
+    }
+}
+
+use std::str::CharIndices;
+
+pub struct MatchSpanIterator<'a> {
+    pub item: &'a str,
+    pub matched: &'a [u32],
+    pub matched_index: usize,
+    pub index: u32,
+    pub byte_offset: usize,
+    pub chars: CharIndices<'a>
+}
+
+impl<'a> Iterator for MatchSpanIterator<'a> {
+    type Item = ((usize, usize), bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let start = self.byte_offset;
+
+        let matching = |index, matched_index| Some(&index) == self.matched.get(matched_index);
+
+        // wether or not we start in a matching span 
+        let match_state = matching(self.index, self.matched_index);
+
+        // while we are in the same state we were at the beginning
+        while matching(self.index, self.matched_index) == match_state {
+            if let Some((offset, _)) = self.chars.next() {
+                self.byte_offset = offset;
+            } else if !self.item[start..].is_empty() {
+                self.index += 1;
+                self.byte_offset = self.item.len();
+                return Some(((start, self.item.len()), match_state));
+            } else {
+                // stop when we don't have any characters left
+                return None;
+            }
+            self.index += 1;
+
+            if match_state { self.matched_index += 1 }
+        }
+
+        Some(((start, self.byte_offset), match_state))
     }
 }
 
