@@ -154,7 +154,9 @@ impl TextInput {
         rc.fill(kurbo::RoundedRect::new(0.0, 0.0, screen_width, search_bar_height, (5.0, 5.0, 0.0, 0.0)), &theme.input_background);
 
         let layout = if self.text.is_empty() && self.selection.is_none() { &self.placeholder_layout } else { &self.layout };
-        rc.draw_text(&layout, (left_padding, baseline));
+
+        let f = layout.line_metric(0).unwrap_or_default().baseline.fract();
+        rc.draw_text(&layout, (left_padding, baseline + f));
 
         if let Some((start, end)) = self.selection.select_range() {
             let mut rect = layout.rects_for_range(start..end)[0];

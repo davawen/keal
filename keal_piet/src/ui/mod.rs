@@ -1,4 +1,4 @@
-use std::{sync::{mpsc::{Receiver, Sender, TryRecvError}, Arc, OnceLock}};
+use std::{ffi::OsStr, sync::{mpsc::{Receiver, Sender, TryRecvError}, Arc, OnceLock}};
 
 use keal::{config::{config, Config}, icon::{Icon, IconCache, IconPath}, log_time, plugin::{entry::DisplayEntry, FrontendEvent, FrontendAction}};
 use resvg::{tiny_skia::{FilterQuality, Pixmap, PixmapPaint}, usvg::{Size, Transform}};
@@ -243,6 +243,9 @@ impl Keal {
                                     self.rendered_icons.insert(icon_path.clone(), None);
                                 }
                             } 
+                            Icon::Other(path) if path.extension() == Some(OsStr::new("png")) => {
+                                self.rendered_icons.insert(icon_path.clone(), Pixmap::load_png(path).ok());
+                            }
                             Icon::Other(_path) => {
                                 // TODO: Other icons
                                 self.rendered_icons.insert(icon_path.clone(), None);
@@ -253,10 +256,14 @@ impl Keal {
             }
 
             let name = if selected { &wrap_info.name_selected } else { &wrap_info.name };
-            rc.draw_text(name, (icon_offset, offset_y + 13.0));
+            let f = name.line_metric(0).unwrap().baseline.fract();
+            // let f = 0.0;
+            rc.draw_text(name, (icon_offset, (offset_y + 13.0).ceil() + f));
 
             if let Some(comment) = &wrap_info.comment {
-                rc.draw_text(comment, (ui_state.screen_width - comment.size().width - 10.0, offset_y + 13.0));
+                let f = comment.line_metric(0).unwrap_or_default().baseline.fract();
+                // let f = 0.0;
+                rc.draw_text(comment, (ui_state.screen_width - comment.size().width - 10.0, offset_y + 13.0 + f));
             }
 
             offset_y = next_offset_y;
