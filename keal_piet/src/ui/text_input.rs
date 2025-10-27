@@ -79,6 +79,27 @@ fn ceil_word_boundary(s: &str, mut index: usize) -> usize {
     }
 }
 
+type StrPosFn = fn(&str, usize) -> usize;
+
+enum Selection {
+    None,
+    Cursor(usize),
+    Select { pivot: usize, cursor: usize }
+}
+
+
+impl Selection {
+    fn is_none(&self) -> bool { matches!(self, Selection::None) }
+    fn select_range(&self) -> Option<(usize, usize)> {
+        match self {
+            &Self::Select { pivot, cursor } if pivot < cursor => Some((pivot, cursor)),
+            &Self::Select { pivot, cursor } => Some((cursor, pivot)),
+            _ => None
+        }
+    }
+}
+
+
 pub struct TextInput {
     /// Modifying `input` should call [`Self::update_input`]
     pub text: String,
@@ -87,11 +108,10 @@ pub struct TextInput {
     /// Layout should be modified to reflect `text`
     layout: TextLayout,
     placeholder_layout: TextLayout,
-    /// byte index of the cursor in the text input, None if the input is not selected
-    cursor_index: Option<usize>,
     cursor_tick: usize,
-    /// byte indices of the start and end ranges of the selection
-    select_range: Option<(usize, usize)>,
+
+    /// current cursor position or selection state
+    selection: Selection,
 
     /// wether the mouse is hovering over the input
     hovered: bool,
@@ -104,7 +124,7 @@ impl TextInput {
         let text = rc.text();
         let layout = text.new_text_layout("").build().unwrap();
         let placeholder_layout = text.new_text_layout(config.placeholder_text.clone())
-            .font(font.clone(), config.font_size as f64 * 1.25)
+            .font(font.clone(), (config.font_size as f64 * 1.25).ceil())
             .text_color(theme.text)
             .default_attribute(FontWeight::MEDIUM)
             .build().unwrap();
@@ -114,9 +134,8 @@ impl TextInput {
             font,
             layout,
             placeholder_layout,
-            cursor_index: Some(0),
             cursor_tick: 0,
-            select_range: None,
+            selection: Selection::None,
             hovered: false,
             clipboard: ClipboardContext::new().unwrap()
         }
@@ -125,35 +144,35 @@ impl TextInput {
     pub fn render(&mut self, rc: &mut RenderContext, config: &Config, theme: &Theme){
         let search_bar_height = (config.font_size as f64*3.25).ceil();
 
-        let size = config.font_size as f64 * 1.25;
+        let size = (config.font_size as f64 * 1.25).ceil();
 
-        let left_padding = config.font_size as f64;
+        let left_padding = (config.font_size as f64).ceil();
         let baseline = (search_bar_height/2.0 - size/2.0).ceil();
 
         let screen_width = rc.target().width() as f64;
 
         rc.fill(kurbo::RoundedRect::new(0.0, 0.0, screen_width, search_bar_height, (5.0, 5.0, 0.0, 0.0)), &theme.input_background);
 
-        let layout = if self.text.is_empty() && self.cursor_index.is_none() { &self.placeholder_layout } else { &self.layout };
+        let layout = if self.text.is_empty() && self.selection.is_none() { &self.placeholder_layout } else { &self.layout };
         rc.draw_text(&layout, (left_padding, baseline));
 
-        if let Some((start, end)) = self.select_range {
+        if let Some((start, end)) = self.selection.select_range() {
             let mut rect = layout.rects_for_range(start..end)[0];
             if end == self.text.len() {
                 rect.x1 = layout.size().width;
             }
             rc.fill(rect.with_origin((rect.x0 + left_padding, rect.y0 + baseline)), &theme.input_selection);
-        } else if let Some(cursor_index) = self.cursor_index {
+        } else if let Selection::Cursor(cursor) = self.selection {
             let cursor_position = if self.text.is_empty() {
                 0.0
-            } else if cursor_index == self.text.len() {
+            } else if cursor == self.text.len() {
                 layout.size().width
             } else {
-                layout.rects_for_range(cursor_index..cursor_index+1)[0].x0
+                layout.rects_for_range(cursor..cursor+1)[0].x0
             };
 
-            let pos = left_padding + cursor_position;
-            rc.stroke(kurbo::Line::new((pos, baseline), Point::new(pos, baseline + size + 5.0)), &Color::WHITE, 1.0);
+            let pos = (left_padding + cursor_position).ceil();
+            rc.stroke(kurbo::Line::new((pos + 0.5, baseline), Point::new(pos + 0.5, (baseline + size + 5.0).round())), &Color::WHITE, 1.0);
         }
     }
 
@@ -172,7 +191,36 @@ impl TextInput {
         let left_padding = config.font_size as f64;
         if self.hovered {
             let hit = self.layout.hit_test_point((ui_state.mouse_pos.x - left_padding, 0.0).into());
-            self.cursor_index = Some(hit.idx);
+            self.selection = Selection::Cursor(hit.idx);
+        }
+    }
+
+    fn move_cursor(&mut self, char_call: StrPosFn, word_call: StrPosFn, right: bool, ctrl: bool, shift: bool) {
+        let call = if ctrl { word_call } else { char_call };
+
+        let (old_cursor, new_cursor) = match self.selection {
+            Selection::None => return,
+            // When leaving selection, choose the selection bound matching the direction of the key pressed
+            Selection::Select { pivot, cursor } if !shift => {
+                let bound = if (right && pivot < cursor) || (!right && cursor < pivot) { cursor }
+                else { pivot };
+
+                if ctrl { (bound, (word_call)(&self.text, bound)) } else { (bound, bound) }
+            }
+            Selection::Cursor(cursor) | Selection::Select { pivot: _, cursor } => (cursor, (call)(&self.text, cursor)),
+        };
+
+        if shift {
+            if let Selection::Select { pivot, cursor } = &mut self.selection {
+                if *pivot == new_cursor { self.selection = Selection::Cursor(new_cursor) }
+                else { *cursor = new_cursor; }
+            } else if new_cursor != old_cursor {
+                self.selection = Selection::Select { cursor: new_cursor, pivot: old_cursor };
+            } else {
+                self.selection = Selection::Cursor(new_cursor);
+            }
+        } else {
+            self.selection = Selection::Cursor(new_cursor);
         }
     }
 
@@ -183,130 +231,85 @@ impl TextInput {
         let ctrl = ui_state.ctrl;
         let shift = ui_state.shift;
 
-        if let Some(cursor_index) = &mut self.cursor_index {
+        if !matches!(self.selection, Selection::None) {
             let mut modified = false;
 
-            if ctrl {
-                match key.physical_key {
-                    PhysicalKey::Code(KeyCode::KeyA) => self.select_range = Some((0, self.text.len())),
-                    PhysicalKey::Code(KeyCode::KeyC) => {
-                        if let Some((start, end)) = self.select_range {
-                            let text = &self.text[start..end];
-                            self.clipboard.set_contents(text.to_owned()).unwrap();
-                        }
+            match key.physical_key {
+                PhysicalKey::Code(KeyCode::KeyA) if ctrl => self.selection = Selection::Select { pivot: 0, cursor: self.text.len() },
+                PhysicalKey::Code(KeyCode::KeyC) if ctrl => {
+                    if let Some((start, end)) = self.selection.select_range() {
+                        let text = &self.text[start..end];
+                        self.clipboard.set_contents(text.to_owned()).unwrap();
                     }
-                    PhysicalKey::Code(KeyCode::KeyX) => {
-                        if let Some((start, end)) = self.select_range {
-                            *cursor_index = start; // in case we expanded the selection to the right
-                            self.select_range = None;
-
-                            let text = self.text.drain(start..end).collect::<String>();
-                            self.clipboard.set_contents(text).unwrap();
-                            modified = true;
-                        }
-                    }
-                    PhysicalKey::Code(KeyCode::KeyV) => {
-                        if let Some((start, end)) = self.select_range {
-                            *cursor_index = start; // in case we expanded the selection to the right
-                            self.text.drain(start..end);
-                            self.select_range = None;
-                            modified = true;
-                        }
-
-                        match self.clipboard.get_contents() {
-                            Ok(text) if !text.is_empty() => {
-                                self.text.insert_str(*cursor_index, &text);
-                                *cursor_index += text.len();
-                                modified = true;
-                            }
-                            _ => (),
-                        }
-                    }
-                    _ => ()
                 }
-            } else if let (PhysicalKey::Code(KeyCode::ArrowLeft), true) = (key.physical_key, *cursor_index > 0) {
-                self.cursor_tick = 0;
-                let old_index = *cursor_index;
+                PhysicalKey::Code(KeyCode::KeyX) if ctrl => {
+                    if let Some((start, end)) = self.selection.select_range() {
+                        self.selection = Selection::Cursor(start);
 
-                let mut new_index = if ctrl {
-                    floor_word_boundary(&self.text, *cursor_index)
-                } else {
-                    floor_char_boundary(&self.text, *cursor_index)
-                };
-
-                if shift {
-                    if let Some((start, end)) = &mut self.select_range {
-                        if *start == old_index { // started on the left, expand selection
-                            *start = new_index;
-                        } else if *end == old_index { // started on the right, retract selection
-                            *end = new_index;
-                            if *start == *end { // went back to the start, remove selection
-                                self.select_range = None;
-                            }
-                        }
-                    } else {
-                        self.select_range = Some((new_index, old_index));
+                        let text = self.text.drain(start..end).collect::<String>();
+                        self.clipboard.set_contents(text).unwrap();
+                        modified = true;
                     }
-                } else if let Some((start, _)) = self.select_range {
-                    self.select_range = None;
-                    // put cursor to the left of selection (matches behaviour on web browsers)
-                    new_index = start; 
                 }
-
-                *cursor_index = new_index;
-            } else if let (PhysicalKey::Code(KeyCode::ArrowRight), true) = (key.physical_key, *cursor_index < self.text.len()) {
-                self.cursor_tick = 0;
-                let old_index = *cursor_index;
-
-                let mut new_index = if ctrl {
-                    ceil_word_boundary(&self.text, *cursor_index)
-                } else {
-                    ceil_char_boundary(&self.text, *cursor_index)
-                };
-
-                if shift {
-                    if let Some((start, end)) = &mut self.select_range {
-                        if *start == old_index { // started on the left, retract selection
-                            *start = new_index;
-                            if *start == *end {  // went back to start, remove selection
-                                self.select_range = None;
-                            }
-                        } else if *end == old_index { // started on the right, expand selection
-                            *end = new_index;
-                        }
-                    } else {
-                        self.select_range = Some((old_index, new_index));
-                    }
-                } else if let Some((_, end)) = self.select_range {
-                    self.select_range = None;
-                    // put cursor to the right when going out of selection (matches behaviour on web browsers)
-                    new_index = end;
-                }
-
-                *cursor_index = new_index;
-            } else if let PhysicalKey::Code(KeyCode::Backspace) = key.physical_key {
-                if let Some((start, end)) = self.select_range { // remove selection
-                    *cursor_index = start; // in case we expanded the selection to the right
-                    self.text.drain(start..end);
-                    self.select_range = None;
-                } else if *cursor_index > 0 {
-                    *cursor_index = floor_char_boundary(&self.text, *cursor_index);
-                    self.text.remove(*cursor_index);
-                }
-                modified = true;
-            } else if let Some(text) = &key.text {
-                if !text.contains(|c: char| c == '\n' || c == '\r' || c.is_control()) {
-                    if let Some((start, end)) = self.select_range { // remove selected text
-                        *cursor_index = start;
+                PhysicalKey::Code(KeyCode::KeyV) if ctrl => {
+                    let cursor = if let Some((start, end)) = self.selection.select_range() {
                         self.text.drain(start..end);
-                        self.select_range = None;
+                        modified = true;
+                        start
+                    } else if let Selection::Cursor(cursor) = self.selection { cursor }
+                    else { unreachable!() };
+
+                    match self.clipboard.get_contents() {
+                        Ok(text) if !text.is_empty() => {
+                            self.text.insert_str(cursor, &text);
+                            self.selection = Selection::Cursor(cursor + text.len());
+                            modified = true;
+                        }
+                        _ => (),
                     }
-
-                    self.text.insert_str(*cursor_index, text.as_str());
-                    *cursor_index += text.len();
-
+                }
+                PhysicalKey::Code(KeyCode::ArrowLeft) => {
                     self.cursor_tick = 0;
+                    self.move_cursor(floor_char_boundary, floor_word_boundary, false, ctrl, shift);
+                }
+                PhysicalKey::Code(KeyCode::ArrowRight) => {
+                    self.cursor_tick = 0;
+                    self.move_cursor(ceil_char_boundary, ceil_word_boundary, true, ctrl, shift);
+                }
+                PhysicalKey::Code(KeyCode::Backspace) => {
+                    if let Some((start, end)) = self.selection.select_range() { // remove selection
+                        self.text.drain(start..end);
+                        self.selection = Selection::Cursor(start);
+                    } else if let Selection::Cursor(cursor) = &mut self.selection && *cursor > 0 {
+                        *cursor = floor_char_boundary(&self.text, *cursor);
+                        self.text.remove(*cursor);
+                    }
                     modified = true;
+                }
+                PhysicalKey::Code(KeyCode::Delete) => {
+                    if let Some((start, end)) = self.selection.select_range() { // remove selection
+                        self.text.drain(start..end);
+                        self.selection = Selection::Cursor(start);
+                    } else if let Selection::Cursor(cursor) = &mut self.selection && *cursor < self.text.len() {
+                        self.text.remove(*cursor);
+                    }
+                    modified = true;
+                }
+                _ => if let Some(text) = &key.text {
+                    if !text.contains(|c: char| c == '\n' || c == '\r' || c.is_control()) {
+                        if let Some((start, end)) = self.selection.select_range() { // remove selected text
+                            self.text.drain(start..end);
+                            self.selection = Selection::Cursor(start);
+                        }
+
+                        if let Selection::Cursor(cursor) = &mut self.selection {
+                            self.text.insert_str(*cursor, text.as_str());
+                            *cursor += text.len();
+
+                            self.cursor_tick = 0;
+                            modified = true;
+                        }
+                    }
                 }
             }
 
@@ -318,17 +321,16 @@ impl TextInput {
     }
 
     pub fn update_input(&mut self, rc: &mut RenderContext, config: &Config, theme: &Theme, from_user: bool) {
-        match &mut self.cursor_index {
-            Some(cursor_index) if from_user => *cursor_index = (*cursor_index).min(self.text.len()),
-            cursor_index => *cursor_index = Some(self.text.len())
+        match &mut self.selection {
+            Selection::Cursor(cursor) if from_user => *cursor = (*cursor).min(self.text.len()),
+            selection => *selection = Selection::Cursor(self.text.len())
         }
-        self.select_range = None;
 
         let rc_text = rc.text();
         let layout = rc_text.new_text_layout(self.text.clone())
             .font(self.font.clone(), pixels_to_pts(config.font_size as f64 * 1.25))
             .text_color(theme.text)
-            .default_attribute(FontWeight::MEDIUM)
+            .default_attribute(FontWeight::REGULAR)
             .build().unwrap();
 
         self.layout = layout;
