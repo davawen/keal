@@ -52,7 +52,7 @@ fn redraw<D, W>(state: &mut State, window: &mut Rc<Window>, surface: &mut Surfac
 
 fn main() {
     keal::start_log_time();
-    match keal::arguments::Arguments::init() {
+    match keal::arguments::Arguments::init("piet") {
         Ok(_) => (),
         Err(keal::arguments::Error::Exit) => return,
         Err(keal::arguments::Error::UnknownFlag(flag)) => {

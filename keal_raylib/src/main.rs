@@ -11,7 +11,7 @@ mod config;
 
 fn main() -> anyhow::Result<()> {
     start_log_time();
-    match Arguments::init() {
+    match Arguments::init("raylib") {
         Ok(_) => (),
         Err(arguments::Error::Exit) => return Ok(()),
         Err(arguments::Error::UnknownFlag(flag)) => {

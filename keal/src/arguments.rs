@@ -3,7 +3,8 @@ use std::sync::OnceLock;
 pub struct Arguments {
     pub dmenu: bool,
     pub protocol: Protocol,
-    pub timings: bool
+    pub timings: bool,
+    pub frontend: &'static str
 }
 
 #[derive(Clone, Copy)]
@@ -22,18 +23,23 @@ pub enum Error {
     UnknownFlag(String)
 }
 
+pub trait Frontend {
+    const FRONTEND_NAME: &'static str;
+}
+
 impl Arguments {
-    pub fn init() -> Result<&'static Self, Error> {
-        let this = Self::parse()?;
+    pub fn init(frontend: &'static str) -> Result<&'static Self, Error> {
+        let this = Self::parse(frontend)?;
         let arguments = ARGUMENTS.get_or_init(move || this);
         Ok(arguments)
     }
 
-    fn parse() -> Result<Self, Error> {
+    fn parse(frontend: &'static str) -> Result<Self, Error> {
         let mut arguments = Arguments {
             dmenu: false,
             protocol: Protocol::RofiExtended,
-            timings: false
+            timings: false,
+            frontend
         };
 
         let mut args = std::env::args();
@@ -48,7 +54,7 @@ impl Arguments {
                     Err(Error::Exit)?
                 }
                 "--version" | "-v" => {
-                    Self::print_version();
+                    Self::print_version(frontend);
                     Err(Error::Exit)?
                 }
                 _ => Err(Error::UnknownFlag(arg))?
@@ -58,8 +64,8 @@ impl Arguments {
         Ok(arguments)
     }
 
-    fn print_version() {
-        println!("keal: version {}", env!("CARGO_PKG_VERSION"));
+    fn print_version(frontend: &'static str) {
+        println!("keal version {}, {frontend} frontend", env!("CARGO_PKG_VERSION"));
     }
 
     fn print_help() {
@@ -67,7 +73,7 @@ impl Arguments {
         println!();
         println!("options:");
         println!("  -h, --help    Show this help and exit");
-        println!("  -v, --version Show the current version of keal");
+        println!("  -v, --version Show the current version and frontend of keal");
         println!("  -d, --dmenu   Launch keal in dmenu mode (pipe choices into it)");
         println!("  -k, --keal    In dmenu mode, use the same protocol as plugins, instead of the default rofi extended dmenu protocol");
         println!("      --timings Show how long the different keal systems take to start up")
