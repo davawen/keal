@@ -1,6 +1,7 @@
 # Keal
 
-A fast application launcher, that works under wayland, with the convenience and extensibility of ULauncher, but without the occasional slowness, and that is easier to extend.  
+A fast application launcher with native support for wayland,
+made easy to extend.
 
 ## Installation
 
@@ -30,6 +31,7 @@ for_window [title="Keal"] floating enable, border none
 - [x] Configuration (font, style/colors, icon theme)
   - [x] Plugin overrides
   - [x] Plugin configuration
+  - [ ] Better layout customization
 - [ ] Custom aliases
 - [x] Frequently launched applications/plugins
 - [x] Dmenu mode (with rofi extended protocol)
@@ -38,9 +40,12 @@ for_window [title="Keal"] floating enable, border none
   - [x] Launch Application
   - [x] List plugins
   - [x] Manage session (log out, suspend, shutdown, ...)
+  - [ ] Built-in calculator and unit converter
+- [ ] More plugin actions (copy to clipboard, open in terminal)
 - [ ] Error feedback in UI instead of panicking/logging to stderr
 - [ ] Plugin database
 - [x] Asynchronous plugin execution
+- [ ] Allow keal to launch as a daemon for faster startup
 
 ## Configuration
 Keal is configured in `~/.config/keal/config.ini`.
@@ -115,8 +120,8 @@ suspend = $HOME/run_suspend.sh
 
 ## Plugins
 
-Plugins are placed in `~/.config/keal/plugins/`.
-Characteristics are described in a `config.ini` file:
+To create a plugin, add a new folder in `~/.config/keal/plugins/`.
+Describe its caracteristics with a `config.ini` file:
 ```ini
 [plugin]
 name = Session Manager
@@ -156,7 +161,7 @@ Concretely, here is how communication looks like:
 -> enter
 -> 0
 <- action:fork
-(launches firefox)
+(plugin launches firefox)
 ```
 
 Different options are indicated by a field name, a colon, and a value.
@@ -203,6 +208,27 @@ And here is an exemple of a more interactive plugin:
 <- action:fork
 (Launches file explorer)
 ```
+
+## A note on frontends
+
+keal is actually provided as two separate entities:
+- A crate that acts as a backend, that provides the core functionality of keal
+  (loading config, loading plugins, communicating with plugins, search and filter...)
+- A frontend that renders Keal's choice list and that communicates user input to the backend
+
+This make it actually quiet easy to build your own Keal frontend, with whatever style
+or layout you want! You could build a TUI frontend, for exemple.
+
+The default and recommended frontend is `keal_iced`, because it has crisp rendering for
+any kind of text (right to left, fancy unicode characters...) and handles HiDPI gracefully.
+
+The two main downsides to `keal_iced` are:
+- It can sometimes have slow startup speeds, most probably due to [iced#2455](https://github.com/iced-rs/iced/issues/2455)
+- The scroll window does not follow the selected element when moving it with arrow keys (see [#2](https://github.com/davawen/keal/issues/2))
+
+Thus, there are other *experimental* frontends, most notably `keal_piet`, which is entirely software
+rendered (thus working a lot better on older hardware) and which fixes the two above issues, but
+which handles exotic text... less well.
 
 ## Troubleshooting
 
